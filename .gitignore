@@ -1,0 +1,21 @@
+# ── 敏感：绝不能提交或分发 ──
+engine/.env
+*.env
+# 常驻服务鉴权 token（谁拿到谁能读 ta 的全部记忆）
+.soul-daemon.token
+*.soul-daemon.token
+
+# ── 运行环境与数据（体积大 / 属运行产物）──
+engine/.venv/
+engine/data/
+engine/venv/
+
+# ── 运行产物 ──
+.soul-daemon.log
+.soul-daemon.pid
+__pycache__/
+*.pyc
+.DS_Store
+
+# ── 打包输出 ──
+dist/

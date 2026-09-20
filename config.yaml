@@ -1,0 +1,46 @@
+# soul-skill 技能配置（扁平键值，启动器自带解析，无需 PyYAML）
+# 留空表示自动探测。
+
+# 数字生命引擎根目录（含 soul.py / engine/ 的那一层）
+#
+# 留空（推荐）= 自动使用技能自带的 engine/，即「自包含模式」：
+#   技能自带完整的引擎代码，不依赖任何外部路径，可整体拷贝给别人用。
+#
+# 若你有另一份引擎副本想复用（例如系统里已装好的另一个 soul-skill），
+# 把它的 engine 路径填在这里即可，例如：/opt/soul-skill/engine
+project_root: ""
+
+# 运行引擎的解释器。留空则依次尝试：
+#   $SOUL_PYTHON > <project_root>/.venv/bin/python > python3.13/3.12/3.11/3.10 > python3
+python: ""
+
+# 用于 soulctl setup 创建虚拟环境的解释器（引擎需 Python >= 3.10）
+# 注意：3.14 下 onnxruntime 1.20 没有轮子，请用 3.11–3.13。
+#
+# 留空（推荐）= 自动探测：依次尝试 $SOUL_PYTHON > python3.13 > 3.12 > 3.11 > 3.10 > python3
+# 只有当自动探测不到可用解释器时，才在这里写死一个绝对路径。
+bootstrap_python: ""
+
+# 默认灵魂身份。default_user 与项目终端/微信模式共用同一个灵魂与记忆。
+default_user: default_user
+
+# 常驻服务（推荐开启：引擎冷启动较慢，常驻后每次调用毫秒级返回）
+prefer_daemon: true
+daemon_host: 127.0.0.1
+daemon_port: 8765
+
+# 常驻服务鉴权 token 文件。留空（推荐）= <project_root>/.soul-daemon.token
+# 首次 serve 自动生成（0600）；重启复用，客户端自动读取，无需人工配置。
+# 也可用环境变量 SOUL_DAEMON_TOKEN 直接给定 token（服务端与客户端都认）。
+daemon_token_file: ""
+
+# Web 终端（python3 main.py web）：在浏览器里跑一个 cli 会话。
+# 与常驻服务同一套安全默认 —— 默认只监听回环。页面没有鉴权，
+# 改成 0.0.0.0 等于把 ta 的对话与记忆暴露给同网段；确需如此请显式
+# 加 --allow-remote（命令行），不要只改这里。
+web_host: 127.0.0.1
+web_port: 5000
+
+# 超时（秒）：对话要等大模型，给足；状态类命令很快
+chat_timeout_seconds: 300
+default_timeout_seconds: 120

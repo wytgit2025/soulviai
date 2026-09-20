@@ -1,0 +1,15 @@
+# soul-skill · 可选依赖：语义向量记忆（约 200MB 依赖 + 100MB 模型）
+#
+# 装不装？
+#   不分发、刚部署、记忆还少  → 不要装（保持 minimal）
+#   自己长期用、记忆已积累数百条 → 值得装
+#
+# 安装方式：
+#   python3 scripts/soulctl.py setup                # 完整模式（自动连本文件一起装）
+#   # 或手动：pip install -r requirements-vector.txt
+#
+# ⚠️ onnxruntime 1.20 没有 Python 3.14 轮子，请用 3.11–3.13。
+
+fastembed>=0.3.5
+onnxruntime==1.20.0
+numpy>=1.24.0

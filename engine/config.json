@@ -1,0 +1,55 @@
+{
+  "ai": {
+    "_note": "任意 OpenAI 兼容接口都可用。最省事：只填 provider（自动补全 api_base/model）；也可以直接手写 api_base+model。可用 provider 见 core/ai.py 的 PROVIDERS：openai / deepseek / moonshot / zhipu / dashscope / volces / siliconflow / openrouter / groq / together / mistral / xai / ollama / vllm / lmstudio / llamacpp。环境变量 AI_PROVIDER / AI_API_KEY / AI_API_BASE / AI_MODEL 优先级高于本文件。",
+    "provider": "",
+    "api_key": "",
+    "api_base": "",
+    "model": "",
+    "temperature": 0.85,
+    "max_tokens": 1024,
+    "timeout_seconds": 60,
+    "background_interval_minutes": 1
+  },
+  "wx_bot": {
+    "bot_token": "",
+    "ilink_bot_id": "",
+    "ilink_user_id": ""
+  },
+  "autonomous": {
+    "_note": "outgoingness 是人格外向度（0=内向慢热、0.7=默认外向、1=很外放），会同时影响回应节奏与沉默概率；silence_mode=terse 时'完全不回'会降级为'极短但真实的一句'，设成 silent 可恢复原始沉默行为。带 _cooldown_seconds 的是各类主动消息各自的冷却（秒）：防止 ta 短时间内用不同措辞重复同一个意思（实测出现过 6 分钟内两条 emotional_overflow 说的是同一件事）。不填就用默认值 emotional_overflow 1800 / interesting_thought 1200 / memory_recall 3600 / search_inspired 1800。",
+    "outgoingness": 0.7,
+    "silence_mode": "terse",
+    "terse_reply_energy": 0.45,
+    "conversation_window_minutes": 180,
+    "emotional_overflow_cooldown_seconds": 1800,
+    "interesting_thought_cooldown_seconds": 1200,
+    "memory_recall_cooldown_seconds": 3600,
+    "search_inspired_cooldown_seconds": 1800,
+    "emotional_reply": {
+      "_note": "选择性回复（沉默）的可调参数。logit_base 越小越倾向回复；max_silence_prob 是硬上界；max_consecutive_silence 是允许连续不回的上限。",
+      "enabled": true,
+      "logit_base": -1.5,
+      "max_silence_prob": 0.06,
+      "mysterious_factor": 0.02,
+      "max_consecutive_silence": 1
+    },
+    "delayed_reply": {
+      "enabled": true,
+      "max_delay_seconds": 120
+    }
+  },
+  "user_mbti_type": "ENFJ",
+  "lang": "zh",
+  "memory": {
+    "emotional_distortion_rate": 0.15
+  },
+  "license": {
+    "_note": "授权与订阅。key 留空 = 免费模式（终端对话/状态可用，微信·QQ·Telegram·Discord·iMessage·Web 终端需要 pro）。enforce: off=完全不校验 / soft=只提示不拦截（默认，避免误伤老用户）/ hard=超范围时拒绝运行。断网时按 data/license_session.json 缓存 + grace_hours 宽限期沿用上次结论。环境变量 SOUL_LICENSE_KEY / SOUL_LICENSE_API / SOUL_LICENSE_ENFORCE 优先级更高，SOUL_NO_LICENSE=1 可整体跳过。",
+    "key": "",
+    "api": "https://api.soulviai.com",
+    "enforce": "soft",
+    "timeout_seconds": 5,
+    "grace_hours": 72
+  },
+  "_onboarding_done": false
+}

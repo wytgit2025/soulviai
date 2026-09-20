@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "soul-skill": {
+      "command": "python3",
+      "args": [
+        "/把这里换成绝对路径/soul-skill/scripts/soul_mcp.py"
+      ]
+    }
+  }
+}
