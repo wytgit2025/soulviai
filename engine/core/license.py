@@ -93,7 +93,10 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 RUNTIME_ROOT = os.path.dirname(_HERE)                      # engine/
 SKILL_ROOT = os.path.dirname(RUNTIME_ROOT)                 # 技能根（可能不存在）
 CONFIG_PATH = os.path.join(RUNTIME_ROOT, "config.json")
-CACHE_PATH = os.path.join(RUNTIME_ROOT, "data", "license_session.json")
+# 授权缓存是运行数据：跟着数据家目录走，不再写进代码树
+from core.paths import data_root                           # noqa: E402
+
+CACHE_PATH = os.path.join(data_root(), "license_session.json")
 
 # ────────────────────────────────────────────────────────────
 # 运行期状态

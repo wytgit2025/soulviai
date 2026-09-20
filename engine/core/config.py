@@ -9,6 +9,8 @@ import json
 import os
 import threading
 
+from core import paths as _paths
+
 _data: dict = {}
 _lock = threading.Lock()
 _loaded = False
@@ -36,10 +38,9 @@ def _load_dotenv():
     if _env_baseline is None:
         _env_baseline = dict(os.environ)
 
-    env_paths = [
-        ".env",
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
-    ]
+    # .env 属于代码（engine/.env），必须写绝对路径：运行期 cwd 现在指向数据家
+    # 目录，相对路径会去那儿找一个不存在的 .env —— 模型 Key 会静默失效。
+    env_paths = [_paths.code_file(".env")]
     for p in env_paths:
         if not os.path.exists(p):
             continue
@@ -79,6 +80,11 @@ def _read_config(config_path: str) -> dict:
 
     只返回、不碰全局 —— 由调用方原子替换，避免 reload 期间其它线程读到空配置。
     """
+    # 相对路径（默认的 "config.json"）一律按**代码根**解析：运行期 cwd 是数据家
+    # 目录，跟着 cwd 走会打开一个不存在的配置文件。放在这里统一收口，各处调用
+    # 传 "config.json" 都不再依赖 cwd。
+    if not os.path.isabs(config_path):
+        config_path = _paths.code_file(config_path)
     _load_dotenv()
     with open(config_path, "r", encoding="utf-8") as f:
         data = json.load(f)

@@ -22,9 +22,9 @@ from collections import defaultdict
 # ── 存储 ──
 _pool: Dict[str, dict] = {}
 _pool_lock = threading.Lock()
-_POOL_FILE = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "json", "collective_pool.json"
-)
+# 相对 cwd：core.paths.chdir_home() 会把工作目录切到数据家目录（~/.soul-skill）。
+# 仍用 `os.path.dirname(__file__)` 拼路径会绕过数据家，把记忆写回代码树里。
+_POOL_FILE = os.path.join("data", "json", "collective_pool.json")
 
 _CONFIG = {
     "verification_threshold": 3,

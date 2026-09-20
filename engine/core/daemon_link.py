@@ -41,6 +41,19 @@ import time
 import urllib.error
 import urllib.request
 
+# 路径与配置解析的**唯一实现**在 core/paths.py：这里只转出，不再各留一份
+# 口径可能漂移的实现（旧版本模块自己有一份 config_path / parse_flat_yaml）。
+from core.paths import (                                    # noqa: E402
+    config_path,
+    data_root,
+    home_file,
+    home_root,
+    parse_flat_yaml,
+    read_config,
+    runtime_root,
+    skill_root,
+)
+
 TOKEN_HEADER = "X-Soul-Token"
 TOKEN_ENV = "SOUL_DAEMON_TOKEN"
 TOKEN_ENV_FILE = "SOUL_DAEMON_TOKEN_FILE"
@@ -57,82 +70,14 @@ _CHAT_TIMEOUT = 300.0           # 对话要等大模型，给足
 # ────────────────────────────────────────────────────────────
 # 路径与配置
 # ────────────────────────────────────────────────────────────
-def runtime_root():
-    """引擎目录（含 core/ 的那一层），即 engine/。"""
-    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# runtime_root / skill_root / config_path / parse_flat_yaml 的实现在 core/paths.py
+# （见文件头导入）。这里只保留一个转出别名，供本模块内部沿用旧名字。
+_read_cfg = read_config
 
-
-def skill_root():
-    """技能根目录（engine/ 的上一级）。独立部署时可能不存在。"""
-    return os.path.dirname(runtime_root())
-
-
-def config_path():
-    """config.yaml 位置：$SOUL_CONFIG > 技能根那份。
-
-    优先级必须与 soulctl / engine_bridge / clients/web 一致。少了 $SOUL_CONFIG
-    这一层，用户用备用配置改了 daemon_port 时，CLI 会连新端口，而聊天渠道仍
-    固执地去探 8765 —— 两边都以为对方没起服务。
-    """
-    env = os.environ.get("SOUL_CONFIG")
-    if env:
-        return os.path.abspath(os.path.expanduser(env))
-    return os.path.join(skill_root(), "config.yaml")
-
-
-def _strip_comment(raw):
-    """去掉行尾注释。
-
-    只把「行首或空白之后的 #」当注释，且引号内的 # 不算 —— 否则
-    `daemon_token_file: /Volumes/a#b/token` 会被截成 `/Volumes/a`：
-    路径静默变错，比直接报错难查得多。
-    """
-    quote = ""
-    for i, ch in enumerate(raw):
-        if quote:
-            if ch == quote:
-                quote = ""
-            continue
-        if ch in "\"'":
-            quote = ch
-            continue
-        if ch == "#" and (i == 0 or raw[i - 1] in " \t"):
-            return raw[:i]
-    return raw
-
-
-def parse_flat_yaml(text):
-    """极简 YAML：扁平 `key: value` + # 注释 + 引号字符串。
-
-    语义基准是 scripts/soulctl.py 的同名函数（那边是启动器，本模块是引擎侧，
-    两者必须能独立运行，所以各留一份实现）。**改这里就要同步改那边**，
-    以及与它并列的 engine/clients/web.py:_flat_config。
-    """
-    cfg = {}
-    for raw in text.splitlines():
-        line = _strip_comment(raw).rstrip()
-        if not line.strip() or ":" not in line:
-            continue
-        key, val = line.split(":", 1)
-        key, val = key.strip(), val.strip()
-        # 只有成对的引号才剥：`"it's"` 应得到 `it's`，
-        # 贪心地 strip('"').strip("'") 会把它啃成 `its`。
-        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
-            val = val[1:-1]
-        if val.lower() in ("true", "false"):
-            cfg[key] = (val.lower() == "true")
-        else:
-            cfg[key] = val
-    return cfg
-
-
-def _read_cfg():
-    """读 config.yaml（扁平 `key: value`，与 soulctl 同一份、同一语义）。"""
-    try:
-        with open(config_path(), "r", encoding="utf-8") as fh:
-            return parse_flat_yaml(fh.read())
-    except Exception:      # 配置坏了也要能降级跑
-        return {}
+# 运行期状态（token / 日志 / pid）都落在数据家目录，不进代码树
+TOKEN_FILE_NAME = ".soul-daemon.token"
+LOG_FILE_NAME = ".soul-daemon.log"
+PID_FILE_NAME = ".soul-daemon.pid"
 
 
 def settings():
@@ -144,7 +89,7 @@ def settings():
     except ValueError:
         port = DEFAULT_PORT
     path = (os.environ.get(TOKEN_ENV_FILE) or cfg.get("daemon_token_file") or ""
-            or os.path.join(runtime_root(), ".soul-daemon.token"))
+            or home_file(TOKEN_FILE_NAME))
     return host, port, os.path.abspath(os.path.expanduser(path))
 
 
@@ -342,7 +287,11 @@ def spawn(timeout=STARTUP_TIMEOUT):
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env.pop(NO_DAEMON_ENV, None)          # 别把这个开关传给子进程
-    log_path = os.path.join(runtime_root(), ".soul-daemon.log")
+    log_path = home_file(LOG_FILE_NAME)
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    except Exception:
+        pass
 
     print("[联动] 未发现常驻服务，正在后台拉起（复用同一个引擎）...")
     try:

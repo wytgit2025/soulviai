@@ -9,13 +9,15 @@
 
   1) 密钥凭证   engine/.env、*.env        ← 含真实 API Key，绝不能外发
   2) 运行环境   .venv/ venv/ node_modules/ ← 几十 MB，收件人自己建
-  3) 运行数据   engine/data/  memory/     ← ta 的记忆 / 状态 / 日志（含纯提示词版）
+  3) 运行数据   遗留的 engine/data/、memory/ ← ta 的记忆 / 状态 / 日志（含纯提示词版）
   4) 字节码缓存 __pycache__/ *.pyc *.pyo   ← 首次运行会自动重生成
   5) 系统垃圾   .DS_Store、.soul-daemon.log / .pid
   6) 版本控制   .git/
 
-并把 engine/config.json 里的 api_key / bot token 清空成模板
-（收件人自己填 key），data 下的空目录会重建，保证首启能用。
+并把 engine/config.json 里的 api_key / bot token 清空成模板（收件人自己填 key）。
+记忆现在默认住在数据家目录（~/.soul-skill），不在技能树里；下面针对 engine/data
+的规则是**防御性**的：万一有旧版遗留没迁移，也绝不能被发出去。写出之前还有一道
+`assert_no_runtime_state()` 兜底断言 —— 规则写错时会构建失败，而不是悄悄漏出去。
 
 用法：
     python3 scripts/package_skill.py                # → dist/soul-skill-<版本>.zip
@@ -59,11 +61,8 @@ PRUNE_FILE_NAMES = {".DS_Store", ".soul-daemon.log", ".soul-daemon.pid"}
 PRUNE_FILE_SUFFIX = (".pyc", ".pyo", ".env")
 
 # 打包后按「空目录」重建（引擎首次运行要求目录存在）
-KEEP_EMPTY_DIRS = (
-    "engine/data/db",
-    "engine/data/json",
-    "engine/data/flaw",
-)
+# 数据家目录（默认 ~/.soul-skill）由引擎首次运行时自建，包里不需要预留空目录
+KEEP_EMPTY_DIRS = ()
 
 # 需要清空敏感字段的配置文件
 SANITIZE_FILE = "engine/config.json"
@@ -178,6 +177,30 @@ def classify_file(name):
 # ────────────────────────────────────────────────────────────
 # 扫描
 # ────────────────────────────────────────────────────────────
+def assert_no_runtime_state(kept):
+    """构建期护栏：交付包里绝不允许出现记忆或运行期状态。
+
+    排除规则写在扫描阶段，命中判断却取决于「规则有没有写全」—— 靠这个保证不漏
+    是不够的（实测漏过）。所以在**最终文件清单**上再断言一次，命中就中止构建：
+    交付契约宁可在构建期炸掉，也不要让用户的记忆被发出去。
+    """
+    bad = []
+    for _src, arc in kept:
+        rel = arc.replace("\\", "/")
+        if rel == "data" or rel.endswith("/data") or "/data/" in rel \
+                or rel.startswith("data/") or rel.startswith("memory/") \
+                or rel == "memory":
+            bad.append(rel)
+        elif os.path.basename(rel).startswith(".soul-daemon."):
+            bad.append(rel)
+    if bad:
+        raise SystemExit(
+            "[soul-skill] 打包中止：交付包里出现记忆或运行期状态 —— %s\n"
+            "[soul-skill] 这些属于运行数据，不该外发；请检查排除规则。"
+            % ", ".join(sorted(bad)[:8]))
+    return True
+
+
 def scan():
     """遍历技能根，返回 (保留文件列表, 排除统计, 排除样例)。"""
     kept, dropped, samples = [], {}, []
@@ -205,6 +228,7 @@ def scan():
                 samples.append((reason, os.path.join(rel, fn) if rel else fn))
             else:
                 kept.append((src, arc))
+    assert_no_runtime_state(kept)
     return kept, dropped, samples
 
 

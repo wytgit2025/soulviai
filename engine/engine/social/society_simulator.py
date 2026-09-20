@@ -40,9 +40,8 @@ _CONFIG = {
 
 # ── 社会状态 ──
 _society: Dict[str, dict] = {}
-_SOCIETY_FILE = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "json", "society_state.json"
-)
+# 相对 cwd（core.paths.chdir_home() 切到数据家目录），不要用 __file__ 拼
+_SOCIETY_FILE = os.path.join("data", "json", "society_state.json")
 _lock = threading.Lock()
 _background_thread: Optional[threading.Thread] = None
 _running = False

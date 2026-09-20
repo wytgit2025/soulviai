@@ -21,7 +21,8 @@ from typing import Dict, List, Optional, Tuple
 
 # ── 沙盒存储 ──
 _sandbox: Dict[str, List[dict]] = {}  # user_id → [pattern, ...]
-_SANDBOX_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "behavior_sandbox.json")
+# 相对 cwd（core.paths.chdir_home() 切到数据家目录），不要用 __file__ 拼
+_SANDBOX_FILE = os.path.join("data", "behavior_sandbox.json")
 _MAX_PATTERNS_PER_USER = 8
 
 

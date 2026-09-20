@@ -20,16 +20,27 @@ import sys
 import os
 
 # 确保项目根目录在 sys.path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_CODE_ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _CODE_ROOT)
+
+# 运行期工作目录 = 数据家目录（默认 ~/.soul-skill）。
+# 引擎里所有 `data/...` 都是相对 cwd 的路径，少了这一句就会在「启动时所在的
+# 目录」旁边长出一份新的空记忆 —— 看起来就像灵魂失忆。
+try:
+    from core import paths as _paths
+    _paths.chdir_home()
+    _CONFIG_JSON = _paths.config_json_path()
+except Exception:
+    _CONFIG_JSON = os.path.join(_CODE_ROOT, "config.json")
 
 # ── 首次启动：人格探索问答 ──
 try:
     import json, os
-    if not os.path.exists("config.json"):
+    if not os.path.exists(_CONFIG_JSON):
         import onboarding
         onboarding.run()
     else:
-        with open("config.json", encoding="utf-8") as f:
+        with open(_CONFIG_JSON, encoding="utf-8") as f:
             _cfg = json.load(f)
         if not _cfg.get("_onboarding_done"):
             import onboarding
@@ -40,7 +51,7 @@ except Exception:
 
 # ── 读取语言设置 ──
 try:
-    with open("config.json", encoding="utf-8") as f:
+    with open(_CONFIG_JSON, encoding="utf-8") as f:
         _lang_cfg = json.load(f)
     _lang = _lang_cfg.get("lang", "zh")
     from engine.i18n import set_lang

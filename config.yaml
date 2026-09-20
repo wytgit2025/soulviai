@@ -21,6 +21,16 @@ python: ""
 # 只有当自动探测不到可用解释器时，才在这里写死一个绝对路径。
 bootstrap_python: ""
 
+# 数据家目录：ta 的记忆（db / json / flaw）与 token、日志都放这里。
+#
+# 留空（推荐）= ~/.soul-skill
+# 数据刻意**不放在技能目录里**：技能目录是会被拷贝、压缩、分发的，记忆一旦
+# 在树里，拷给别人或同步网盘就等于把灵魂和渠道凭证一起交出去。
+#
+# 想在同一台机器上跑两份互不干扰的记忆（例如并存两个版本试效果），把这里填成
+# 两个不同路径即可；相对路径按技能根解析。
+data_dir: ""
+
 # 默认灵魂身份。default_user 与项目终端/微信模式共用同一个灵魂与记忆。
 default_user: default_user
 
@@ -29,7 +39,7 @@ prefer_daemon: true
 daemon_host: 127.0.0.1
 daemon_port: 8765
 
-# 常驻服务鉴权 token 文件。留空（推荐）= <project_root>/.soul-daemon.token
+# 常驻服务鉴权 token 文件。留空（推荐）= <data_dir>/.soul-daemon.token
 # 首次 serve 自动生成（0600）；重启复用，客户端自动读取，无需人工配置。
 # 也可用环境变量 SOUL_DAEMON_TOKEN 直接给定 token（服务端与客户端都认）。
 daemon_token_file: ""

@@ -140,6 +140,37 @@ def load_config():
 
 
 # ────────────────────────────────────────────────────────────
+# 数据家目录（记忆与运行期状态）
+# ────────────────────────────────────────────────────────────
+# 记忆不该跟着代码走：技能目录是会被拷贝、压缩、分发的，data/ 一旦在树里，
+# 拷给别人（或同步网盘）就等于把灵魂和渠道凭证一起交出去。
+HOME_ENV = "SOUL_DATA_DIR"
+HOME_DIR_NAME = ".soul-skill"
+PID_FILE_NAME = ".soul-daemon.pid"
+LOG_FILE_NAME = ".soul-daemon.log"
+
+
+def resolve_home(cfg):
+    """数据家目录：$SOUL_DATA_DIR > config.yaml: data_dir > ~/.soul-skill
+
+    口径必须与 engine/core/paths.home_root() 一致 —— 启动器算出来的这一份会
+    以 SOUL_DATA_DIR 传给引擎子进程，两边不一致就会出现「CLI 说数据在 A、
+    引擎却写进 B」这种最难查的分叉。
+    """
+    env = (os.environ.get(HOME_ENV) or "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    raw = cfg.get("data_dir") or ""
+    raw = raw.strip() if isinstance(raw, str) else ""
+    if raw:
+        path = os.path.expanduser(raw)
+        if not os.path.isabs(path):
+            path = os.path.join(SKILL_ROOT, path)
+        return os.path.abspath(path)
+    return os.path.join(os.path.expanduser("~"), HOME_DIR_NAME)
+
+
+# ────────────────────────────────────────────────────────────
 # 定位项目 / 解释器
 # ────────────────────────────────────────────────────────────
 def looks_like_project(path):
@@ -248,13 +279,15 @@ class Ctx(object):
                      or cfg.get("default_user") or "default_user")
         self.host = cfg.get("daemon_host") or "127.0.0.1"
         self.port = int(cfg.get("daemon_port") or 8765)
-        self.pidfile = os.path.join(self.project or SKILL_ROOT, ".soul-daemon.pid")
-        self.logfile = os.path.join(self.project or SKILL_ROOT, ".soul-daemon.log")
-        # token 文件位置：env > config.yaml 的 daemon_token_file > 项目内默认
+        # 运行期状态与记忆都在数据家目录，不进代码树
+        self.home = resolve_home(cfg)
+        self.pidfile = os.path.join(self.home, PID_FILE_NAME)
+        self.logfile = os.path.join(self.home, LOG_FILE_NAME)
+        # token 文件位置：env > config.yaml 的 daemon_token_file > 数据家目录默认
         self.token_file = os.path.abspath(os.path.expanduser(
             os.environ.get(TOKEN_ENV + "_FILE")
             or cfg.get("daemon_token_file")
-            or os.path.join(self.project or SKILL_ROOT, TOKEN_FILE_NAME)))
+            or os.path.join(self.home, TOKEN_FILE_NAME)))
 
     def timeout(self, kind="default"):
         if kind == "chat":
@@ -438,6 +471,8 @@ def run_bridge(ctx, argv, timeout=120.0, cwd=None):
     cmd = [ctx.python, BRIDGE] + argv
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
+    # 数据家目录由启动器算好显式传下去：两边各算一次，迟早会算岔
+    env[HOME_ENV] = ctx.home
     env.pop("SOUL_DEBUG", None)
     try:
         proc = subprocess.run(cmd, cwd=cwd or ctx.project, env=env,
@@ -484,6 +519,9 @@ def cmd_doctor(ctx, args):
         "skill": SKILL_ROOT,
         "project": ctx.project,
         "project_ok": bool(ctx.project),
+        # 数据已经不在代码树里：doctor 必须报出真实位置，否则用户按老路径找记忆
+        "data_root": ctx.home,
+        "db_file": os.path.join(ctx.home, "data", "db", "soulmate.db"),
         "python": ctx.python,
         "python_candidates_tried": ctx.tried,
         "daemon": {"alive": False, "url": "http://%s:%d" % (ctx.host, ctx.port)},
@@ -663,7 +701,10 @@ def cmd_serve(ctx, args):
     if getattr(args, "allow_remote", False):
         argv.append("--allow-remote")
 
+    os.makedirs(ctx.home, exist_ok=True)     # 日志/token 都落在数据家目录
+
     if args.foreground:
+        os.environ[HOME_ENV] = ctx.home
         os.chdir(ctx.project)
         if IS_WIN:
             # Windows 的 os.execv 语义不同，直接前台等待更可靠
@@ -678,6 +719,7 @@ def cmd_serve(ctx, args):
     log.flush()
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
+    env[HOME_ENV] = ctx.home
     env.pop("SOUL_DEBUG", None)
     try:
         proc = subprocess.Popen([ctx.python, BRIDGE] + argv, cwd=ctx.project, env=env,
@@ -1079,6 +1121,69 @@ CODE_ITEMS = ("soul.py", "onboarding.py", "config.json", "requirements.txt",
 FAKE_REPLY = "嗯…我在。|||累了就先歇会儿，别硬撑"
 
 
+def cmd_migrate_data(ctx, args):
+    """把旧版写在 engine/data 里的记忆搬到数据家目录。
+
+    记忆没有备份，所以默认**只复制不删除** —— 先保证搬完还能读，删源留给
+    用户看过对话历史之后再显式 `--purge`。
+    """
+    src = os.path.join(ctx.project, "data") if ctx.project else None
+    dst = os.path.join(ctx.home, "data")
+    info = {"ok": True, "command": "migrate-data",
+            "from": src, "data_root": dst}
+
+    # token 也一并带过去（只复制、不删旧那份）：常驻服务可能仍念着旧路径的
+    # token，复制一份让新老两侧读到同一个值 —— 否则升级后会出现「服务明明在跑，
+    # CLI 却报 token 不匹配」，而用户完全无从下手。
+    old_token = os.path.join(ctx.project, TOKEN_FILE_NAME) if ctx.project else None
+    if old_token and os.path.isfile(old_token) and not os.path.exists(ctx.token_file):
+        try:
+            os.makedirs(os.path.dirname(ctx.token_file), exist_ok=True)
+            shutil.copy2(old_token, ctx.token_file)
+            info["token"] = "已把 token 复制到 %s" % ctx.token_file
+        except OSError as exc:
+            info["token_error"] = str(exc)
+
+    if not src or not os.path.isdir(src):
+        info["skipped"] = "代码树里没有 data 目录，无需迁移"
+        emit(info, EXIT_OK)
+    if os.path.realpath(src) == os.path.realpath(dst):
+        info["skipped"] = "数据已经在数据家目录"
+        emit(info, EXIT_OK)
+
+    marker = os.path.join(dst, "db", "soulmate.db")
+    if os.path.exists(marker) and not getattr(args, "force", False):
+        emit(fail("数据家目录里已经有记忆，没有覆盖：%s" % marker,
+                  error_code=None,
+                  old_data=src,
+                  hint="确认要用旧数据覆盖才加 --force；旧数据仍在原处。"),
+             EXIT_ERR)
+
+    moved = []
+    try:
+        os.makedirs(dst, exist_ok=True)
+        for name in sorted(os.listdir(src)):
+            s, d = os.path.join(src, name), os.path.join(dst, name)
+            if os.path.isdir(s):
+                shutil.copytree(s, d, dirs_exist_ok=True)
+            elif os.path.isfile(s):
+                shutil.copy2(s, d)
+            else:
+                continue
+            moved.append(name)
+    except Exception as exc:
+        emit(fail("迁移失败：%s" % exc, old_data=src, data_root=dst,
+                  hint="旧数据没有删除，可重试；出错时不要手工删源目录。"),
+             EXIT_ERR)
+    info["moved"] = moved
+    if getattr(args, "purge", False):
+        shutil.rmtree(src, ignore_errors=True)
+        info["purged"] = src
+    else:
+        info["note"] = "确认对话历史还在之后，可用 --purge 删掉旧目录：%s" % src
+    emit(info, EXIT_OK)
+
+
 def cmd_selftest(ctx, args):
     import tempfile
     if not ctx.project or not ctx.python:
@@ -1123,6 +1228,12 @@ def cmd_selftest(ctx, args):
         sub = Ctx(ctx.cfg, argparse.Namespace(project=sandbox, python=ctx.python,
                                               user="selftest_user"))
         sub.user = "selftest_user"
+        # 沙箱要把**数据家目录**一起隔离：引擎的工作目录就是数据家目录，只换代码
+        # 根的话自检仍会写进真实灵魂的记忆，而输出里还写着「不碰真实数据」。
+        sub.home = sandbox
+        sub.pidfile = os.path.join(sandbox, PID_FILE_NAME)
+        sub.logfile = os.path.join(sandbox, LOG_FILE_NAME)
+        sub.token_file = os.path.join(sandbox, TOKEN_FILE_NAME)
         if os.path.realpath(sub.project or "") != os.path.realpath(sandbox):
             shutil.rmtree(sandbox, ignore_errors=True)
             emit(fail("沙箱隔离校验失败：项目被解析成了 %s。" % sub.project,
@@ -1204,7 +1315,8 @@ COPY_PRUNE_REL = ("engine/data",)
 COPY_PRUNE_FILES = {".DS_Store", ".soul-daemon.log", ".soul-daemon.pid",
                     ".soul-daemon.token"}
 COPY_PRUNE_SUFFIX = (".pyc", ".pyo", ".env")
-COPY_KEEP_EMPTY = ("engine/data/db", "engine/data/json", "engine/data/flaw")
+# 数据家目录由引擎在首次运行时自建，副本里不需要预留空目录
+COPY_KEEP_EMPTY = ()
 
 
 def _copy_ignore(src_root):
@@ -1239,8 +1351,10 @@ def copy_skill(dst):
 
 COPY_HINT = ("副本不含运行环境与密钥。首次使用前先在其目录下跑 "
              "`python3 scripts/soulctl.py setup --minimal`，再 `cp "
-             "engine/.env.example engine/.env` 填 key；"
-             "若要共用同一个灵魂（同一份记忆），改用默认的软链安装。")
+             "engine/.env.example engine/.env` 填 key。"
+             "注意：记忆与 token 都在数据家目录（默认 ~/.soul-skill），所以副本"
+             "和原件用的是**同一个灵魂**；要让副本另有独立记忆，就在它的 "
+             "config.yaml 里填一个不同的 data_dir。")
 
 
 def cmd_install(ctx, args):
@@ -1850,6 +1964,15 @@ def build_parser():
     stest.add_argument("--sandbox", help="指定沙箱目录（默认自动建临时目录）")
     stest.add_argument("--keep", action="store_true", help="保留沙箱目录")
     stest.set_defaults(func=cmd_selftest)
+
+    md = sub.add_parser("migrate-data",
+                        help="把旧版写在 engine/data 的记忆搬到数据家目录")
+    add_common(md)
+    md.add_argument("--purge", action="store_true",
+                    help="迁移成功后删掉旧的 engine/data")
+    md.add_argument("--force", action="store_true",
+                    help="数据家目录已有记忆时也覆盖")
+    md.set_defaults(func=cmd_migrate_data)
 
     ins = sub.add_parser("install", help="安装到各 OpenClaw 系技能目录")
     add_common(ins)

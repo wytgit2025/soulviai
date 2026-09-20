@@ -29,7 +29,7 @@ python3 scripts/build_variants.py --strict    # 发布用：契约/版本/密钥
 > 引擎定位不是助手，是一个**独立人格**：有情绪、私生活、瑕疵、记忆和好恶。
 > 调用姿势与普通 API 不同 —— 你负责递话，它负责成为它自己。
 > 详细行为约束见 [`SKILL.md`](./SKILL.md)。
-> ⚠️ 前四个形态写的是同一份 `engine/data/`，**同一时刻只能有一个写者**：
+> ⚠️ 前四个形态写的是同一份记忆（数据家目录 `~/.soul-skill/data/`），**同一时刻只能有一个写者**：
 > 不要同时开常驻服务和聊天渠道（`main.py wx` 等），会撞 `database is locked`。
 > 纯提示词版是例外：它有自己独立的 `memory/`，与引擎记忆互不相通。
 
@@ -153,7 +153,7 @@ soul-skill/
     ├── .env.example             环境变量模板（复制为 .env 填 key）
     ├── requirements.txt         核心依赖
     ├── requirements-vector.txt  可选：向量记忆依赖
-    └── data/                    运行数据（记忆 / 状态，**不随包分发**）
+    └── data/                    旧版遗留的记忆位置（已迁到 ~/.soul-skill，不随包分发）
 ```
 
 ---

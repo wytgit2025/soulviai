@@ -7,8 +7,10 @@ engine/.env
 
 # ── 运行环境与数据（体积大 / 属运行产物）──
 engine/.venv/
-engine/data/
 engine/venv/
+# 记忆默认在数据家目录（~/.soul-skill），这里的规则只是防御：万一有旧版遗留的
+# engine/data（未迁移），也绝不能被提交或分发出去。
+engine/data/
 
 # ── 运行产物 ──
 .soul-daemon.log

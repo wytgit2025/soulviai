@@ -216,10 +216,18 @@ def _split_parts(text):
 # 项目加载
 # ────────────────────────────────────────────────────────────
 def bootstrap(project=None):
+    """代码根挂进 sys.path，工作目录切到**数据家目录**。
+
+    这两件事现在指向不同地方：project 是代码（engine/），cwd 是数据
+    （~/.soul-skill，可用 SOUL_DATA_DIR / config.yaml:data_dir 改）。引擎里
+    大量 `data/...` 相对路径都以 cwd 为基准，所以必须切过去；只挂 sys.path
+    不切 cwd，就会在启动目录旁边长出一份新的空记忆。
+    """
     project = os.path.abspath(project or os.getcwd())
     if project not in sys.path:
         sys.path.insert(0, project)
-    os.chdir(project)
+    import core.paths as paths       # project 进 sys.path 之后才 import 得到
+    paths.chdir_home()
     return project
 
 
@@ -277,7 +285,7 @@ def cmd_doctor(args):
     # 让 .env 生效（与运行时行为一致），否则会把「key 配在 .env 里」误报成未配置
     try:
         from dotenv import load_dotenv
-        for _p in (os.path.join(project, ".env"), ".env"):
+        for _p in (os.path.join(project, ".env"),):
             if os.path.isfile(_p):
                 load_dotenv(_p)
                 break
@@ -305,11 +313,19 @@ def cmd_doctor(args):
         info["ok"] = False
         info["config_error"] = "找不到 config.json"
 
-    info["db_file"] = os.path.join(project, "data", "db", "soulmate.db")
+    # 数据位置以 core.paths 为准：记忆已经不在代码树里了
+    if project not in sys.path:
+        sys.path.insert(0, project)
+    try:
+        import core.paths as _paths
+        home, data_dir = _paths.home_root(), _paths.data_root()
+    except Exception:
+        home, data_dir = project, os.path.join(project, "data")
+    info["data_root"] = home
+    info["db_file"] = os.path.join(data_dir, "db", "soulmate.db")
     info["db_exists"] = os.path.isfile(info["db_file"])
-    info["data_writable"] = os.access(os.path.join(project, "data")
-                                      if os.path.isdir(os.path.join(project, "data"))
-                                      else project, os.W_OK)
+    info["data_writable"] = os.access(
+        data_dir if os.path.isdir(data_dir) else home, os.W_OK)
 
     if not info["deps_required_ok"]:
         info["ok"] = False

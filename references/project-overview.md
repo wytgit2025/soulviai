@@ -1,7 +1,8 @@
 # 引擎架构总览
 
 > 引擎代码就在技能自带的 `engine/` 目录里（`soul.py` + `engine/` + `core/` + `clients/`）。
-> 技能因此可以独立运行，也自带 `engine/data/`（记忆与人格存在这里，不与其他副本共享）。
+> 技能因此可以独立运行；但**记忆不在这里** —— 数据家目录（默认 `~/.soul-skill/`）才是 ta 的家，
+> 同一台机器上的副本默认共用同一个灵魂（要隔离就改 `config.yaml` 的 `data_dir`）。
 
 ## 一句话定位
 
@@ -125,9 +126,20 @@ Python 3.10+ · 任意 OpenAI 兼容模型接口 · SQLite(WAL) · fastembed(BGE
 
 ## 数据落点（重要）
 
-- `data/db/soulmate.db` — 主数据库（人格、记忆、宿命、待发队列）
-- `data/db/embedding.db` — 向量索引
-- `data/json/`、`data/flaw/` — JSON 持久化
-- `config.json` — 含 `ai.api_key` 等敏感配置
+记忆住在**数据家目录**，不在技能目录里：
 
-> 这些**全部留在项目里**，技能不复制、不外传。任何情况下不要把 `data/` 或 `config.json` 暴露给外部工具。
+    $SOUL_DATA_DIR  >  config.yaml: data_dir  >  ~/.soul-skill
+
+- `<data_dir>/data/db/soulmate.db` — 主数据库（人格、记忆、宿命、待发队列）
+- `<data_dir>/data/db/embedding.db` — 向量索引
+- `<data_dir>/data/json/`、`<data_dir>/data/flaw/` — JSON 持久化
+- `<data_dir>/.soul-daemon.token` / `.log` / `.pid` — 常驻服务凭据与日志
+- `engine/config.json` — 属于**代码**（含 `ai.api_key` 等敏感配置）
+
+引擎的**工作目录就是数据家目录**（`core/paths.py:chdir_home()`）：所有 `data/...`
+相对路径都从这里展开，所以从任意目录启动都读到同一份记忆，也不会在启动目录旁边
+长出一份新的空记忆。旧版写在 `engine/data/` 的记忆用 `soulctl migrate-data` 搬迁。
+
+> 记忆与 `config.json` **都不随包分发**：打包器剔除它们，构建期还有
+> `assert_no_runtime_state()` 断言兜底（规则写错会直接构建失败）。
+> 任何情况下不要把 `data/` 或 `config.json` 暴露给外部工具。

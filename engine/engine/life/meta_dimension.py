@@ -39,9 +39,8 @@ _DIM_CONFIG = {
 
 # ── 维度注册表 ──
 _DIMENSION_REGISTRY: Dict[str, dict] = {}
-_REGISTRY_FILE = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "json", "dimension_registry.json"
-)
+# 相对 cwd（core.paths.chdir_home() 切到数据家目录），不要用 __file__ 拼
+_REGISTRY_FILE = os.path.join("data", "json", "dimension_registry.json")
 
 # 基础维度中文名映射（用于显示）
 _BASE_DIM_NAMES = {
