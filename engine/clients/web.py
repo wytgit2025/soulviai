@@ -253,7 +253,7 @@ def _flat_config():
 
     语义基准是 scripts/soulctl.py:parse_flat_yaml。clients/ 刻意不 import
     core/（core/__init__ 会包装 sys.stdout），所以这里自留一份实现 ——
-    **改这里就要同步改 soulctl 与 core/daemon_link 那两份**。
+    **改这里就要同步改 soulctl 与 core/paths 那两份**。
     """
     path = os.environ.get("SOUL_CONFIG") or os.path.join(_SKILL_ROOT, "config.yaml")
     data = {}

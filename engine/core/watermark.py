@@ -6,7 +6,7 @@
 用途
 ----
 每个分发副本可以注入一个唯一的 recipient 标识，用于在源码泄漏时
-追溯来源。构建脚本 `scripts/build_release.py --watermark <ID>` 会覆写
+追溯来源。构建脚本 `scripts/dev/build_release.py --watermark <ID>` 会覆写
 下面的 `_RECIPIENT`，生成带唯一标记的副本。
 
 追溯方法

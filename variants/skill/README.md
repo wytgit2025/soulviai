@@ -42,5 +42,5 @@ SKILL.md + scripts/ + references/ + engine/ + config.yaml + VERSION + LICENSE
 
 ## 它受构建器校验
 
-`scripts/build_variants.py` 的 `check_shells()` 会核对每个形态都有 `variants/<key>/` 槽位，
+`scripts/dev/build_variants.py` 的 `check_shells()` 会核对每个形态都有 `variants/<key>/` 槽位，
 缺一个就在构建时报错 —— 这不是可以随手删掉的装饰。

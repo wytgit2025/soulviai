@@ -28,7 +28,7 @@ soulctl.py                         engine_bridge.py                     项目�
 | 实现 | 谁在用 |
 |---|---|
 | `scripts/soulctl.py` → `parse_flat_yaml` | 启动器（**语义基准**） |
-| `engine/core/daemon_link.py` → `_read_cfg` | 聊天渠道 / Web 端判断常驻服务地址与 token |
+| `engine/core/paths.py` → `parse_flat_yaml` | 引擎侧唯一实现；`core/daemon_link.py` 已改为转出别名 `_read_cfg`，不再自留一份 |
 | `engine/clients/web.py` → `_flat_config` | Web 终端解析 `python` / `web_host` / `web_port` |
 
 三者**必须语义一致**，踩过的坑：

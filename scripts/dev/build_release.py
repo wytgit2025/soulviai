@@ -16,12 +16,12 @@
 
 用法
 ----
-    python3 scripts/build_release.py                        # 默认不加水印
-    python3 scripts/build_release.py --watermark 20260920-0001
-    python3 scripts/build_release.py --dry-run              # 只看会做什么
-    python3 scripts/build_release.py --install              # 先自动装 PyArmor
-    python3 scripts/build_release.py --expired 2027-01-01   # 加有效期
-    python3 scripts/build_release.py --bind-device <MAC/IPv4/硬盘序列号>
+    python3 scripts/dev/build_release.py                        # 默认不加水印
+    python3 scripts/dev/build_release.py --watermark 20260920-0001
+    python3 scripts/dev/build_release.py --dry-run              # 只看会做什么
+    python3 scripts/dev/build_release.py --install              # 先自动装 PyArmor
+    python3 scripts/dev/build_release.py --expired 2027-01-01   # 加有效期
+    python3 scripts/dev/build_release.py --bind-device <MAC/IPv4/硬盘序列号>
 
 前置条件
 --------
@@ -50,9 +50,12 @@ import subprocess
 import sys
 import zipfile
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL_ROOT = os.path.dirname(HERE)
-SKILL_NAME = os.path.basename(SKILL_ROOT)
+HERE = os.path.dirname(os.path.abspath(__file__))    # <技能根>/scripts/dev
+SCRIPTS_DIR = os.path.dirname(HERE)                  # <技能根>/scripts
+SKILL_ROOT = os.path.dirname(SCRIPTS_DIR)            # 技能根
+# 包内根目录名 = 技能身份，与 package_skill.SKILL_NAME 保持一致。
+# 不要跟着本地文件夹名走：仓库被 clone 成别的名字时，包名会跟着变（构建不可复现）。
+SKILL_NAME = "soul-skill"
 IS_WIN = os.name == "nt"
 
 # 需要混淆的核心包（相对 engine/）
@@ -280,7 +283,7 @@ def main(argv=None):
     if not pyarmor:
         print("[build] ❌ 未找到 PyArmor。")
         print("[build]    安装：  %s -m pip install pyarmor" % python_exe)
-        print("[build]    或重跑： python3 scripts/build_release.py --install")
+        print("[build]    或重跑： python3 scripts/dev/build_release.py --install")
         return 1
 
     ver = pyarmor_version(pyarmor)

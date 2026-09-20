@@ -23,23 +23,26 @@
 把差异集中在 `variants/<key>/` 下，构建时组装，可以避免多份引擎各自漂移 ——
 这是多形态项目最大的维护成本。
 
-剔除规则（密钥 / 虚拟环境 / 记忆数据 / 字节码）直接复用 `package_skill.py`，
-不在这里重写一遍：那是安全边界，只能有一个实现。
+剔除规则（密钥 / 虚拟环境 / 记忆数据 / 字节码 / 构建工具）直接复用
+`package_skill.py`，不在这里重写一遍：那是安全边界，只能有一个实现。
 
-同时做两件防漂移的检查（`--strict` 下失败即中止）：
+同时做三件防漂移的检查（`--strict` 下失败即中止）：
   1. 契约完整性：技能根 / 纯文档版 / MCP 版的文档必须覆盖引擎真实存在的端点、状态、
      错误码；端点本身从 `engine_bridge.py` 的路由里抠出来当基准，两个方向都核对。
   2. 版本一致性：`VERSION` 与**每一份** SKILL.md（技能根那份 + 各薄壳那份，
      后者才是真正发出去的技能定义）的 frontmatter `version:` 必须相同；
      没有 version 字段同样算漂移。
+  3. 铁律完整性：技能根 / MCP 版 / 纯文档版三份各写一份七条铁律，措辞按形态定制
+     （那是接口不同，该不同），但任何一条被漏改或整条丢掉都会改变 ta 的性格 ——
+     按 `RULES_ANCHORS` 的核心短语逐条核对。
 
 用法：
-    python3 scripts/build_variants.py                    # 五形态全出，落 dist/*.zip
-    python3 scripts/build_variants.py --only md,mcp      # 只出指定形态
-    python3 scripts/build_variants.py --dir              # 出未压缩目录（调试用）
-    python3 scripts/build_variants.py --dry-run          # 只预览与检查
-    python3 scripts/build_variants.py --list             # 看形态清单
-    python3 scripts/build_variants.py --strict           # 契约/密钥有问题即失败（发布用）
+    python3 scripts/dev/build_variants.py                    # 五形态全出，落 dist/*.zip
+    python3 scripts/dev/build_variants.py --only md,mcp      # 只出指定形态
+    python3 scripts/dev/build_variants.py --dir              # 出未压缩目录（调试用）
+    python3 scripts/dev/build_variants.py --dry-run          # 只预览与检查
+    python3 scripts/dev/build_variants.py --list             # 看形态清单
+    python3 scripts/dev/build_variants.py --strict           # 契约/密钥有问题即失败（发布用）
 """
 import argparse
 import json
@@ -49,8 +52,9 @@ import shutil
 import sys
 import zipfile
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL_ROOT = os.path.dirname(HERE)
+HERE = os.path.dirname(os.path.abspath(__file__))    # <技能根>/scripts/dev
+SCRIPTS_DIR = os.path.dirname(HERE)                  # <技能根>/scripts
+SKILL_ROOT = os.path.dirname(SCRIPTS_DIR)            # 技能根
 VARIANT_SRC = os.path.join(SKILL_ROOT, "variants")
 
 if HERE not in sys.path:
@@ -70,6 +74,22 @@ CONTRACT_ERROR_CODES = ("api_auth", "api_rate_limit", "api_quota",
                         "api_unreachable", "timeout", "no_python", "no_project")
 CONTRACT_MISC = ("X-Soul-Token", "parts", "codes.personality_stage",
                  "codes.life_phase")
+
+# ── 七条铁律的锚点（技能根 / MCP 版 / 纯文档版三份各写一份）──
+# 这三份的铁律**不是复制粘贴的冗余**：措辞按形态定制（`parts` / content 块、
+# `ai.api_key` / `AI_API_KEY`、`/chat` / `soul_chat`），那是接口不同导致的，该不同。
+# 真正会漂移的是「某一条在某一形态里被漏改或整条丢掉」—— 而这三份是宿主 Agent
+# 每次都要读的行为准则，漏一条就等于「换个形态换了个性格」。
+# 锚点取每条的核心短语，与措辞差异无关，只认「这一条在不在」。
+RULES_ANCHORS = (
+    "你是传话人，不是 ta",
+    "多段要分段",
+    "没回就是没回",
+    "别把内脏掏给用户看",
+    "不要绕过它",
+    "每一句话都是不可逆的相处",
+    "后端报错要如实说",
+)
 
 
 def bridge_endpoints(bridge_text):
@@ -98,6 +118,7 @@ DOC_CONTRACT = {
         "tokens": (list(CONTRACT_ERROR_CODES) + list(CONTRACT_MISC)
                    + list(CONTRACT_STATUS)),
         "tools": False,
+        "rules": True,
     },
     "md": {
         "file": "SKILL.md",
@@ -105,11 +126,13 @@ DOC_CONTRACT = {
         "tokens": (list(CONTRACT_ERROR_CODES) + list(CONTRACT_MISC)
                    + list(CONTRACT_STATUS)),
         "tools": False,
+        "rules": True,
     },
     "mcp": {
         "file": "SKILL.md",
         "tokens": ("silent", "backend_error"),
         "tools": True,
+        "rules": True,
     },
     "prompt-md": {
         # 无引擎、无 HTTP，没有端点契约可核：改为核对它的「状态协议 + 人格骨架」，
@@ -136,8 +159,9 @@ VARIANTS = {
         "entries": None,                     # None = 技能根全量（自动排除 dist/ 与 variants/）
         "overrides": [],
         "must_exist": ["SKILL.md", "scripts/soulctl.py", "scripts/soul_mcp.py",
-                       "engine/soul.py", "config.yaml", "VERSION", "LICENSE"],
-        "must_not_exist": ["variants"],
+                       "engine/soul.py", "config.yaml", "VERSION", "LICENSE",
+                       "engine/engine/i18n/strings.json"],
+        "must_not_exist": ["variants", "scripts/dev"],
     },
     "standalone": {
         "title": "独立运行版",
@@ -149,7 +173,8 @@ VARIANTS = {
                       ("variants/standalone/run.cmd", "run.cmd"),
                       ("variants/standalone/README.md", "README.md")],
         "must_exist": ["run.sh", "run.cmd", "README.md", "engine/soul.py",
-                       "scripts/soulctl.py", "config.yaml"],
+                       "scripts/soulctl.py", "config.yaml",
+                       "engine/engine/i18n/strings.json"],
         "must_not_exist": ["SKILL.md", "references"],
     },
     "mcp": {
@@ -163,7 +188,7 @@ VARIANTS = {
                       ("variants/mcp/README.md", "README.md"),
                       ("variants/mcp/mcp.json", "mcp.json")],
         "must_exist": ["SKILL.md", "mcp.json", "scripts/soul_mcp.py",
-                       "engine/soul.py"],
+                       "engine/soul.py", "engine/engine/i18n/strings.json"],
         "must_not_exist": [],
     },
     "md": {
@@ -294,8 +319,8 @@ def check_contract():
     文档里写了源码里没有的东西 = 文档漂移；源码里改了而文档没跟 = 同样报错。
     """
     errors, warnings = [], []
-    bridge = _read(os.path.join(HERE, "engine_bridge.py"))
-    ctl = _read(os.path.join(HERE, "soulctl.py"))
+    bridge = _read(os.path.join(SCRIPTS_DIR, "engine_bridge.py"))
+    ctl = _read(os.path.join(SCRIPTS_DIR, "soulctl.py"))
     source = bridge + ctl
     if not bridge:
         warnings.append("读不到 engine_bridge.py，端点基准退化为内置清单")
@@ -338,6 +363,11 @@ def check_contract():
             if missing_tools:
                 errors.append("%s 形态的 %s 没提到这些工具：%s"
                               % (key, need["file"], "、".join(missing_tools)))
+        if need.get("rules"):
+            missing_rules = [a for a in RULES_ANCHORS if a not in text]
+            if missing_rules:
+                errors.append("%s 形态的 %s 铁律不完整，缺：%s"
+                              % (key, need["file"], "、".join(missing_rules)))
     return errors, warnings
 
 
@@ -357,7 +387,7 @@ def doc_source(spec, key, dest_rel, root=False):
 
 def _mcp_tool_names():
     """从 soul_mcp.py 里抠出工具名（不 import，避免构建期副作用）。"""
-    text = _read(os.path.join(HERE, "soul_mcp.py"))
+    text = _read(os.path.join(SCRIPTS_DIR, "soul_mcp.py"))
     names = re.findall(r'"name":\s*"(soul_[a-z_]+)"', text)
     return sorted(set(names))
 

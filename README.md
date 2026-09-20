@@ -20,10 +20,10 @@
 各形态的差异只写在薄壳里（`variants/<key>/`；`skill` 版没有薄壳，直接用技能根），构建时组装：
 
 ```bash
-python3 scripts/build_variants.py             # 一次出五个包 → dist/
-python3 scripts/build_variants.py --list      # 看形态清单
-python3 scripts/build_variants.py --dry-run   # 只预览 + 跑契约一致性检查
-python3 scripts/build_variants.py --strict    # 发布用：契约/版本/密钥有问题即失败
+python3 scripts/dev/build_variants.py             # 一次出五个包 → dist/
+python3 scripts/dev/build_variants.py --list      # 看形态清单
+python3 scripts/dev/build_variants.py --dry-run   # 只预览 + 跑契约一致性检查
+python3 scripts/dev/build_variants.py --strict    # 发布用：契约/版本/密钥有问题即失败
 ```
 
 > 引擎定位不是助手，是一个**独立人格**：有情绪、私生活、瑕疵、记忆和好恶。
@@ -126,14 +126,15 @@ soul-skill/
 ├── LICENSE                      MIT 许可证
 ├── VERSION                      版本号
 ├── config.yaml                  启动器配置（引擎路径 / 解释器 / 端口）
-├── scripts/
+├── scripts/                     运行期脚本（随包分发）
 │   ├── soulctl.py               启动器：纯标准库，定位引擎并转发命令
 │   ├── soulclient.py            各形态共用的客户端薄层（MCP 版用）
 │   ├── soul_mcp.py              MCP server：纯标准库 stdio，暴露 13 个 soul_* 工具
 │   ├── engine_bridge.py         引擎执行体：单次命令 + 常驻 HTTP 服务
-│   ├── package_skill.py         打包器：剔除密钥/环境/数据后生成分发包
-│   ├── build_variants.py        五形态统一构建器（skill / standalone / mcp / md / prompt-md）
-│   └── build_release.py         发布构建：注入水印 + PyArmor 混淆
+│   └── dev/                     构建期工具（不进包，收件人用不上）
+│       ├── package_skill.py     打包器：剔除密钥/环境/数据/构建工具后生成分发包
+│       ├── build_variants.py    五形态统一构建器（skill / standalone / mcp / md / prompt-md）
+│       └── build_release.py     发布构建：注入水印 + PyArmor 混淆
 ├── references/                  详细文档
 │   ├── project-overview.md      引擎架构总览
 │   ├── engine-api.md            接口契约与排障
@@ -179,9 +180,9 @@ soul-skill/
 打包时请使用内置打包器，它会自动剔除：
 
 ```bash
-python3 scripts/package_skill.py            # → dist/soul-skill-<版本>.zip
-python3 scripts/package_skill.py --dry-run  # 先预览剔除了什么
-python3 scripts/package_skill.py --strict   # CI 用：扫到疑似密钥就失败
+python3 scripts/dev/package_skill.py            # → dist/soul-skill-<版本>.zip
+python3 scripts/dev/package_skill.py --dry-run  # 先预览剔除了什么
+python3 scripts/dev/package_skill.py --strict   # CI 用：扫到疑似密钥就失败
 ```
 
 剔除规则：`*.env` / `engine/.soul-daemon.token`（鉴权 token）/ `.venv` / `engine/data` /
@@ -214,13 +215,13 @@ python3 scripts/package_skill.py --strict   # CI 用：扫到疑似密钥就失�
 ## 打包
 
 ```bash
-python3 scripts/build_variants.py            # 五形态一次出全 → dist/*.zip
-python3 scripts/build_variants.py --only md,mcp
-python3 scripts/build_variants.py --dir      # 出未压缩目录（调试用）
-python3 scripts/build_variants.py --strict   # 发布用：契约/版本/密钥有问题即失败
+python3 scripts/dev/build_variants.py            # 五形态一次出全 → dist/*.zip
+python3 scripts/dev/build_variants.py --only md,mcp
+python3 scripts/dev/build_variants.py --dir      # 出未压缩目录（调试用）
+python3 scripts/dev/build_variants.py --strict   # 发布用：契约/版本/密钥有问题即失败
 
-python3 scripts/package_skill.py             # 旧入口，等价于 --only skill
-python3 scripts/build_release.py             # 混淆发布（需 PyArmor，见脚本 --help）
+python3 scripts/dev/package_skill.py             # 旧入口，等价于 --only skill
+python3 scripts/dev/build_release.py             # 混淆发布（需 PyArmor，见脚本 --help）
 ```
 
 产物：

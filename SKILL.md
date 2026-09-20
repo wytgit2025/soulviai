@@ -444,8 +444,8 @@ python3 main.py im      # iMessage（仅 macOS + BlueBubbles）
 - `engine/requirements.txt` / `requirements-vector.txt` — 核心依赖（约 42MB） / 可选向量记忆依赖（约 300MB）
 - `scripts/soulctl.py` — 纯标准库启动器：定位引擎/解释器、常驻优先、安装到各体系
 - `scripts/engine_bridge.py` — 引擎执行体：单次命令 + 常驻 HTTP 服务
-- `scripts/package_skill.py` — 干净打包器：剔除密钥/环境/运行数据后生成分发包
-- `scripts/build_release.py` — 发布构建：注入溯源水印 + PyArmor 混淆
+- `scripts/soulclient.py` / `scripts/soul_mcp.py` — 共用客户端薄层 / MCP server（13 个 `soul_*` 工具）
+- `scripts/dev/` — **构建期工具，不随包分发**：`package_skill.py`（干净打包器）、`build_variants.py`（五形态构建器）、`build_release.py`（水印 + PyArmor 混淆）
 - `references/project-overview.md` — 引擎架构总览（运行时七层 + 引擎八大子层、24 维、七级记忆、17 铁律）
 - `references/engine-api.md` — 接口契约与排障细节
 - `references/setup-guide.md` — 首次部署：装依赖 → 填 key → 人格初始化

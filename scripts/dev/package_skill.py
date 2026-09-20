@@ -13,6 +13,7 @@
   4) 字节码缓存 __pycache__/ *.pyc *.pyo   ← 首次运行会自动重生成
   5) 系统垃圾   .DS_Store、.soul-daemon.log / .pid
   6) 版本控制   .git/
+  7) 构建工具   scripts/dev/ ← 只在开发者本机跑，收件人用不上
 
 并把 engine/config.json 里的 api_key / bot token 清空成模板（收件人自己填 key）。
 记忆现在默认住在数据家目录（~/.soul-skill），不在技能树里；下面针对 engine/data
@@ -20,11 +21,11 @@
 `assert_no_runtime_state()` 兜底断言 —— 规则写错时会构建失败，而不是悄悄漏出去。
 
 用法：
-    python3 scripts/package_skill.py                # → dist/soul-skill-<版本>.zip
-    python3 scripts/package_skill.py --dir          # → dist/soul-skill/（未压缩目录）
-    python3 scripts/package_skill.py --dry-run      # 只预览，不落盘
-    python3 scripts/package_skill.py --out /tmp/x   # 指定输出目录
-    python3 scripts/package_skill.py --no-sanitize  # 不动 config.json
+    python3 scripts/dev/package_skill.py                # → dist/soul-skill-<版本>.zip
+    python3 scripts/dev/package_skill.py --dir          # → dist/soul-skill/（未压缩目录）
+    python3 scripts/dev/package_skill.py --dry-run      # 只预览，不落盘
+    python3 scripts/dev/package_skill.py --out /tmp/x   # 指定输出目录
+    python3 scripts/dev/package_skill.py --no-sanitize  # 不动 config.json
 """
 import argparse
 import json
@@ -34,8 +35,9 @@ import shutil
 import sys
 import zipfile
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-SKILL_ROOT = os.path.dirname(HERE)
+HERE = os.path.dirname(os.path.abspath(__file__))    # <技能根>/scripts/dev
+SCRIPTS_DIR = os.path.dirname(HERE)                  # <技能根>/scripts
+SKILL_ROOT = os.path.dirname(SCRIPTS_DIR)            # 技能根
 
 # 包内根目录名 = 技能身份（SKILL.md frontmatter 的 name / slug），不是本地文件夹名。
 # 跟本地目录名走有两个后果：仓库被 clone 成别的名字，包内目录就跟着变（构建不可复现）；
@@ -53,6 +55,10 @@ PRUNE_REL_DIRS = (
     "engine/data",          # 运行数据：记忆 / 状态 / 日志，属 ta 的私产
     "memory",                # 纯提示词版的记忆（markdown），同样是 ta 的私产
 )
+
+# 构建期工具：只在开发者本机跑，收件人拿到没有用处，且会把构建链暴露出去
+# （scripts/dev 里的脚本会读写技能根布局，留在包里只会误导使用者去改它）
+DEV_REL_DIRS = ("scripts/dev",)
 
 # 文件名命中即删
 PRUNE_FILE_NAMES = {".DS_Store", ".soul-daemon.log", ".soul-daemon.pid"}
@@ -81,6 +87,7 @@ REASON_ENV = "运行环境"
 REASON_DATA = "运行数据"
 REASON_CACHE = "字节码缓存"
 REASON_JUNK = "系统垃圾"
+REASON_DEV = "构建工具"
 
 # ────────────────────────────────────────────────────────────
 # 内容级密钥扫描
@@ -154,6 +161,9 @@ def classify_dir(rel_dir, name):
             return REASON_ENV
         return REASON_CACHE if name == "__pycache__" else REASON_JUNK
     posix = (rel_dir.replace(os.sep, "/").strip("/") + "/" + name).strip("/")
+    for pre in DEV_REL_DIRS:
+        if posix == pre or posix.startswith(pre + "/"):
+            return REASON_DEV
     for pre in PRUNE_REL_DIRS:
         if posix == pre or posix.startswith(pre + "/"):
             return REASON_DATA
@@ -178,7 +188,7 @@ def classify_file(name):
 # 扫描
 # ────────────────────────────────────────────────────────────
 def assert_no_runtime_state(kept):
-    """构建期护栏：交付包里绝不允许出现记忆或运行期状态。
+    """构建期护栏：交付包里绝不允许出现记忆、运行期状态或构建工具。
 
     排除规则写在扫描阶段，命中判断却取决于「规则有没有写全」—— 靠这个保证不漏
     是不够的（实测漏过）。所以在**最终文件清单**上再断言一次，命中就中止构建：
@@ -191,12 +201,14 @@ def assert_no_runtime_state(kept):
                 or rel.startswith("data/") or rel.startswith("memory/") \
                 or rel == "memory":
             bad.append(rel)
+        elif rel.startswith("scripts/dev/") or "/scripts/dev/" in rel:
+            bad.append(rel)
         elif os.path.basename(rel).startswith(".soul-daemon."):
             bad.append(rel)
     if bad:
         raise SystemExit(
-            "[soul-skill] 打包中止：交付包里出现记忆或运行期状态 —— %s\n"
-            "[soul-skill] 这些属于运行数据，不该外发；请检查排除规则。"
+            "[soul-skill] 打包中止：交付包里出现记忆、运行期状态或构建工具 —— %s\n"
+            "[soul-skill] 这些不该外发；请检查排除规则。"
             % ", ".join(sorted(bad)[:8]))
     return True
 
@@ -302,7 +314,8 @@ def report(kept, dropped, samples, dry_run, secret_hits=None):
     print("[soul-skill] 保留文件: %d 个" % len(kept))
     if dropped:
         print("[soul-skill] 已排除:")
-        for reason in (REASON_SECRET, REASON_ENV, REASON_DATA, REASON_CACHE, REASON_JUNK):
+        for reason in (REASON_SECRET, REASON_ENV, REASON_DATA, REASON_CACHE,
+                       REASON_JUNK, REASON_DEV):
             if dropped.get(reason):
                 print("    - %s: %d 项" % (reason, dropped[reason]))
         show = [s for s in samples if s[0] == REASON_SECRET][:3]
