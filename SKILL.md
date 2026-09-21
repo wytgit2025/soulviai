@@ -108,9 +108,9 @@ metadata:
       - name: SOULVIAI_DEBUG
         required: false
         description: 设为非空可打开引擎调试日志
-          - name: OPENCLAW_GATEWAY_TOKEN
-            required: false
-            description: OpenClaw / QClaw 网关令牌，autoconfig 复用宿主模型路由时需要
+      - name: OPENCLAW_GATEWAY_TOKEN
+        required: false
+        description: OpenClaw / QClaw 网关令牌，autoconfig 复用宿主模型路由时需要
     emoji: "🫀"
     homepage: https://github.com/wytgit2025/soulviai
 ---
