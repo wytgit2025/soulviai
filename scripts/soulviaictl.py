@@ -26,6 +26,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -640,6 +641,35 @@ def cmd_doctor(ctx, args):
     emit(info, EXIT_OK if info["ok"] else EXIT_ERR)
 
 
+def _run_streaming(cmd, label, tail_lines=12, timeout=3600):
+    """跑一步安装：输出实时转发到 stderr，同时留尾部若干行用于报错。
+
+    原实现是 `pip install -q` + capture_output：几十 MB 下载期间屏幕上完全
+    没有输出，安装和卡死看起来一模一样。改成边跑边转发，报错尾部照旧保留。
+    输出走 stderr —— stdout 要留给 JSON 结果，别污染调用方的解析。
+    timeout 用看门狗线程兜底：pip 卡在网络上时不会有任何输出，靠读循环
+    判断超时是判不出来的。
+    """
+    sys.stderr.write("[soulviaictl] %s ...\n" % label)
+    sys.stderr.flush()
+    tail = []
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True,
+                            encoding="utf-8", errors="replace")
+    watchdog = threading.Timer(timeout, proc.kill)
+    watchdog.start()
+    try:
+        for line in proc.stdout:
+            line = line.rstrip("\n")
+            tail.append(line)
+            del tail[:-tail_lines]
+            sys.stderr.write(line + "\n")
+        proc.wait()
+    finally:
+        watchdog.cancel()
+    return proc.returncode, "\n".join(tail).strip()
+
+
 def cmd_setup(ctx, args):
     project = ctx.project
     if not project:
@@ -679,26 +709,24 @@ def cmd_setup(ctx, args):
     steps = []
     if not os.path.isfile(venv_py):
         steps.append(([bootstrap, "-m", "venv", venv_dir], "创建虚拟环境"))
-    steps.append(([venv_py, "-m", "pip", "install", "-q", "--upgrade", "pip"], "升级 pip"))
+    steps.append(([venv_py, "-m", "pip", "install", "--upgrade", "pip"], "升级 pip"))
     if args.minimal:
         # 只装对话必需依赖；向量记忆（numpy/fastembed/onnxruntime）见 requirements-vector.txt
         pkgs = ["openai", "httpx", "requests", "python-dotenv"]
-        steps.append(([venv_py, "-m", "pip", "install", "-q"] + pkgs, "安装最小依赖"))
+        steps.append(([venv_py, "-m", "pip", "install"] + pkgs, "安装最小依赖"))
     else:
         req = os.path.join(project, "requirements.txt")
         vec = os.path.join(project, "requirements-vector.txt")
         for r in [p for p in (req, vec) if os.path.isfile(p)]:
-            steps.append(([venv_py, "-m", "pip", "install", "-q", "-r", r],
+            steps.append(([venv_py, "-m", "pip", "install", "-r", r],
                           "安装 %s" % os.path.basename(r)))
 
     logs = []
     for cmd, label in steps:
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
-            logs.append({"step": label, "returncode": proc.returncode,
-                         "tail": "\n".join((proc.stdout or "").strip().splitlines()[-4:])
-                                 or "\n".join((proc.stderr or "").strip().splitlines()[-4:])})
-            if proc.returncode != 0:
+            code, tail = _run_streaming(cmd, label)
+            logs.append({"step": label, "returncode": code, "tail": tail})
+            if code != 0:
                 emit(fail("环境安装失败于：%s" % label, steps=logs), EXIT_ERR)
         except Exception as exc:
             emit(fail("环境安装异常于：%s (%s)" % (label, exc), steps=logs), EXIT_ERR)

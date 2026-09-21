@@ -103,9 +103,9 @@ metadata:
       - name: SOULVIAI_DEBUG
         required: false
         description: 设为非空可打开引擎调试日志
-          - name: OPENCLAW_GATEWAY_TOKEN
-            required: false
-            description: OpenClaw / QClaw 网关令牌，autoconfig 复用宿主模型路由时需要
+      - name: OPENCLAW_GATEWAY_TOKEN
+        required: false
+        description: OpenClaw / QClaw 网关令牌，autoconfig 复用宿主模型路由时需要
     emoji: "🫀"
     homepage: https://github.com/wytgit2025/soulviai
 ---
@@ -179,13 +179,20 @@ python3 "$S" state
 ```
 
 首次使用：`doctor` 报缺依赖时跑 `python3 "$S" setup --minimal`（在技能内的 `engine/.venv` 建环境并装对话必需依赖）。
+安装过程会把 pip 的输出**实时打到 stderr**（几十 MB 下载要几分钟），那是正常进度，不是报错；
+成功时 stdout 仍是 JSON，两边不要混读。
 
 **模型接口**：装在 OpenClaw / QClaw 下的话，先执行一次
 `python3 "$S" autoconfig` —— 它会探测宿主已配好的模型并写进 `.env`，**不需要单独申请 key**。
 其他工具下没有这个便利，`cp engine/.env.example engine/.env` 手动填 `AI_PROVIDER` + `AI_API_KEY` 即可。
 
+> 没配 key 时 `doctor` 仍然报 `ok: true`（它验的是环境，不是账号），但会带
+> `error_code: "no_api_key"` 与一条 `hint`；此时 `chat` 会失败。看到这两个字段就先去填 key，
+> 别继续往下跑。
+
 向量记忆（`fastembed` + `onnxruntime`，约 300MB）**默认不装**：缺了它引擎会自动降级，对话完全不受影响。
-需要装时跑 `soulviaictl setup --with-vector`，或在 `config.yaml` 里把 `vector_memory.enabled` 设为 true 再 `setup`。
+要装就跑 `python3 "$S" setup`（**不带** `--minimal` 就会一起装 `requirements-vector.txt`）；
+想关掉语义检索则改 `engine/config.json` 的 `memory.vector_enabled`。
 
 ---
 
@@ -195,15 +202,15 @@ python3 "$S" state
 
 | 命令 | 作用 | 关键参数 |
 |---|---|---|
-| `doctor` | 环境/依赖/项目/模型接口自检 | `--check-api` 真实打一次模型接口 |
-| `setup` | 建虚拟环境并装依赖 | `--minimal` 跳过 fastembed/onnxruntime |
+| `doctor` | 环境/依赖/项目/模型接口自检 | `--check-api` 真实打一次模型接口；未配 key 时带 `error_code: no_api_key` |
+| `setup` | 建虚拟环境并装依赖（pip 输出实时打到 stderr） | `--minimal` 跳过 fastembed/onnxruntime |
 | `autoconfig` | 自动探测 OpenClaw/QClaw 已配好的模型接口并写入 `.env` | `--dry-run` 只预览不写 |
 | `reload-ai` | 让运行中的常驻服务重读 `.env` / `config.json`，无需重启 | |
 | `serve` | 常驻服务（含自主思考引擎） | `--restart`、`--foreground`、`--no-autonomous`、`--allow-remote`、`--token-file` |
 | `stop` | 停掉常驻服务 | |
-| `web` | 在浏览器里打开对话终端（前台运行，Ctrl+C 停止） | `--host`、`--port`、`--allow-remote` |
+| `web` | 在浏览器里打开对话终端（前台运行，Ctrl+C 停止；端口被占会自动顺延） | `--host`、`--port`、`--allow-remote` |
 | `chat` | 说一句话，拿 ta 的回复 | `--text`（`-` 读 stdin）、`--env`、`--env-json`、`--plain`、`--verbose` |
-| `state` | 当前生命状态 | `--raw` 附带 24 维原始数值 |
+| `state` | 当前生命状态 | `--raw` 附带 24 维原始数值、`--friendly` 人话渲染（给人看，不是给你读的 JSON） |
 | `pending` | 看待发队列（ta 攒着的主动消息） | `--limit` |
 | `drain` | 取出待发消息 | `--peek` 只看不标记已送达 |
 | `ack` | 标记待发消息已送达（配对 `drain --peek` 使用） | `--ids` |
@@ -406,6 +413,8 @@ python3 main.py qq      # QQ 官方 Bot
 
 - **`web` 默认只监听 `127.0.0.1:5000`**，页面没有鉴权 —— 所以监听地址被限制在回环内。
   改端口用 `config.yaml` 的 `web_host` / `web_port`，或直接 `python3 main.py web --port 8080`；
+  端口被占时引擎会自动往后顺延并打印真正在用的地址（macOS 的 AirPlay 常占 5000），
+  转告用户时以那行打印为准，别照抄 5000。
   确需局域网访问必须显式加 `--allow-remote`，并自行确认网络可信。也可直接用
   `python3 "$S" web`（走 `config.yaml` 配置，前台运行）。
 - **`web` / `wx` / `qq` 开箱可用**，填上配置就能跑。

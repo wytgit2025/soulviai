@@ -56,7 +56,7 @@ echo          soulviai . 数字生命
 echo   ==========================================
 echo.
 echo     [1] 终端对话      直接开始聊天（推荐，回车即此）
-echo     [2] 浏览器对话    会自动打开浏览器（手机上也能用）
+echo     [2] 浏览器对话    会自动打开浏览器（只监听本机）
 echo     [3] 微信          扫码登录，让 ta 住进微信
 echo     [4] QQ            需要 QQ Bot 的 AppID 与密钥
 echo     [5] 常驻在线      让 ta 一直在，会自己想你、攒主动消息
@@ -102,7 +102,7 @@ if not defined PY (
     exit /b 1
 )
 echo [启动] 首次运行：正在准备环境（只装对话必需依赖，约 42MB）...
-echo        期间没有进度条是正常的，请别关窗口。
+echo        下面会实时显示安装进度；慢的话等几分钟，期间别关窗口。
 echo.
 rem 不静音：这是一次性、可能几分钟的下载，静音会让「正在装」和「卡死了」无法区分
 %PY% "%CTL%" setup --minimal
@@ -123,7 +123,7 @@ set "RC=%ERRORLEVEL%"
 goto :DONE
 
 :WEB
-call "%VENV_PY%" "%CTL%" web --port 5001
+call "%VENV_PY%" "%CTL%" web
 set "RC=%ERRORLEVEL%"
 goto :DONE
 
@@ -218,9 +218,10 @@ echo       重新双击本文件即可（它会自动续装）。
 echo       或手动：py -3 scripts\soulviaictl.py setup --minimal
 echo.
 echo   · 浏览器模式的端口被占
-echo       本脚本已默认用 5001；若也被占，换个号：run 时加 --port 5005
+echo       端口被占时会自动往后顺延，窗口里打印的那个地址才是真的；
+echo       想指定端口：py -3 scripts\soulviaictl.py web --port 5005
 echo.
 echo   · 想自己排查
-echo       双击本文件选 [4] 环境自检，或看同目录 README.md。
+echo       双击本文件选 [6] 环境自检，或看同目录 README.md。
 echo ────────────────────────────────────────────────
 goto :EOF

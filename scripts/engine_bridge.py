@@ -313,6 +313,16 @@ def cmd_doctor(args):
         info["ok"] = False
         info["config_error"] = "找不到 config.json"
 
+    # 没配 key 时后续所有对话都会 backend_error，而 doctor 本身仍然全绿 ——
+    # 这是「装完了还是跑不起来」的头号原因，必须在这里就点明。
+    # 只补 hint / error_code，不动 ok：selftest 的沙箱会刻意抹掉 key，
+    # 把「没配 key」判成失败会让健康安装的自检红掉。
+    if info.get("ai") and not info["ai"].get("api_key_configured"):
+        info["error_code"] = "no_api_key"
+        info["hint"] = ("还没配模型接口：把 engine/.env.example 复制成 engine/.env，"
+                        "填上 AI_PROVIDER 与 AI_API_KEY；"
+                        "装在 OpenClaw / QClaw 下可先跑 `soulviaictl.py autoconfig` 复用宿主模型。")
+
     # 数据位置以 core.paths 为准：记忆已经不在代码树里了
     if project not in sys.path:
         sys.path.insert(0, project)

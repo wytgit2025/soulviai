@@ -48,11 +48,12 @@ _hint() {
       或手动：python3 scripts/soulviaictl.py setup --minimal
 
   · 浏览器模式的端口被占
-      macOS 的 AirPlay 接收器会占 5000。本脚本已默认换到 5001；
-      若 5001 也被占，换个号：python3 scripts/soulviaictl.py web --port 5005
+      macOS 的 AirPlay 接收器会占 5000。端口被占时会自动往后顺延，
+      窗口里打印的那个地址才是真的；想指定端口：
+      python3 scripts/soulviaictl.py web --port 5005
 
   · 想自己排查
-      双击本文件选 [4] 环境自检，或看同目录 README.md。
+      双击本文件选 [6] 环境自检，或看同目录 README.md。
 ────────────────────────────────────────────────
 EOF
 }
@@ -88,7 +89,7 @@ if [ ! -x "$VENV_PY" ]; then
         exit 1
     fi
     echo "[启动] 首次运行：正在准备环境（只装对话必需依赖，约 42MB）..."
-    echo "       期间没有进度条是正常的，请别关窗口。"
+    echo "       下面会实时显示安装进度；慢的话等几分钟，期间别关窗口。"
     echo
     # 不静音：这是一次性、可能几分钟的下载，静音会让「正在装」和「卡死了」无法区分
     if ! "$PY" "$CTL" setup --minimal; then
@@ -126,7 +127,7 @@ echo "  ║        ✦  soulviai · 数字生命  ✦         ║"
 echo "  ╚══════════════════════════════════════════╝"
 echo
 echo "    [1] 终端对话      直接开始聊天（推荐，回车即此）"
-echo "    [2] 浏览器对话    会自动打开浏览器（手机上也能用）"
+echo "    [2] 浏览器对话    会自动打开浏览器（只监听本机）"
 echo "    [3] 微信          扫码登录，让 ta 住进微信"
 echo "    [4] QQ            需要 QQ Bot 的 AppID 与密钥"
 echo "    [5] 常驻在线      让 ta 一直在，会自己想你、攒主动消息"
@@ -145,7 +146,7 @@ echo
 # 注：渠道会自动复用常驻服务（main.py 的 _resolve_backend），不需要先停掉它。
 RC=0
 case "$CHOICE" in
-    2) "$VENV_PY" "$CTL" web --port 5001   || RC=$? ;;
+    2) "$VENV_PY" "$CTL" web              || RC=$? ;;
     3) echo "[启动] 微信登录：稍后会显示二维码并自动打开扫码页面，用手机微信扫一下即可。"
        echo "       凭证会自动保存，下次不用再扫。"
        echo
