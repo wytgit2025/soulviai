@@ -25,20 +25,24 @@
 
 ## 引擎八大子层
 
+八个子层都挂在 `engine/engine/` 下。注意 `engine/` 顶层另有一个**同名不同物**的
+`core/`（AI 调用、配置、数据库等基础件）与 `clients/`（渠道接入），别跟子层里的
+`engine/engine/core/` 搞混。
+
 | 子层 | 职责 | 代表模块 |
 |---|---|---|
-| `engine/core/` | 推理链路 | `chat_pipeline`、`inference`、`mind`、`memory`、`memory_vector`、`perception`、`thinking`、`inner_os` |
-| `engine/self/` | 自我人格 | `identity`、`self_model`、`profile`、`soul_profile`、`user_persona`、`user_facts` |
-| `engine/emotion/` | 情绪羁绊 | `bond`、`flaws`、`neurochem`、`emotional_arc`、`micro_expressions` |
-| `engine/life/` | 生命演算 | `life`、`body`、`growth`、`evolution`、`fate`、`chronos`、`life_gate` |
-| `engine/cognitive/` | 高层认知 | `meta_cognition`、`reflection`、`world_model`、`values`、`meaning` |
-| `engine/behavior/` | 行为决策 | `autonomous`、`delivery`、`behavior_decider`、`intention`、`regret`、`search` |
-| `engine/creative/` | 创意自发 | `self_play`、`dream`、`intuition`、`humor`、`analogy` |
-| `engine/social/` | 社会交互 | `laws`、`contradiction_engine`、`prompt_builder`、`sensors`、`continuity` |
+| `engine/engine/core/` | 推理链路 | `chat_pipeline`、`inference`、`mind`、`memory`、`memory_vector`、`perception`、`thinking`、`inner_os` |
+| `engine/engine/self/` | 自我人格 | `identity`、`self_model`、`profile`、`soul_profile`、`user_persona`、`user_facts` |
+| `engine/engine/emotion/` | 情绪羁绊 | `bond`、`flaws`、`neurochem`、`emotional_arc`、`micro_expressions` |
+| `engine/engine/life/` | 生命演算 | `life`、`body`、`growth`、`evolution`、`fate`、`chronos`、`life_gate` |
+| `engine/engine/cognitive/` | 高层认知 | `meta_cognition`、`reflection`、`world_model`、`values`、`meaning` |
+| `engine/engine/behavior/` | 行为决策 | `autonomous`、`delivery`、`behavior_decider`、`intention`、`regret`、`search` |
+| `engine/engine/creative/` | 创意自发 | `self_play`、`dream`、`intuition`、`humor`、`analogy` |
+| `engine/engine/social/` | 社会交互 | `laws`、`contradiction_engine`、`prompt_builder`、`sensors`、`continuity` |
 
 ## 24 维心智内核
 
-系统的情绪中枢，24 个连续值维度构成心理状态空间（`engine/core/mind.py`）。
+系统的情绪中枢，24 个连续值维度构成心理状态空间（`engine/engine/core/mind.py`）。
 
 | 分组 | 维度 |
 |---|---|
@@ -54,7 +58,7 @@
 
 ## 七级记忆系统
 
-模拟人类记忆的遗忘、失真、滤镜与主观偏差（`engine/core/memory.py`）。
+模拟人类记忆的遗忘、失真、滤镜与主观偏差（`engine/engine/core/memory.py`）。
 
 | 等级 | 名称 | 保留期 | 衰减率 |
 |---|---|---|---|
@@ -89,7 +93,7 @@ Stage 7  Aftercare     历史/宿命/生命记录 + 羁绊衰减 + 记忆存储
 → 阶7 内生行为决策（12 维行为向量）→ 阶8 双向宿命终极校准 → PromptBuilder
 ```
 
-## 17 条铁律（`engine/social/laws.py`）
+## 17 条铁律（`engine/engine/social/laws.py`）
 
 1. 情绪永不机械秒切（有残留、递延、发酵、叠加）
 2. 心口永远存在差值

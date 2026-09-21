@@ -7,7 +7,7 @@
 
 | 项 | 要求 | 说明 |
 |---|---|---|
-| 引擎 | 技能自带 `engine/`（`soul.py` + `engine/`） | ✅ 已就位，117 个模块 / 约 3.6MB（不含 `.venv` 与 `data/`） |
+| 引擎 | 技能自带 `engine/`（`soul.py` + `engine/`） | ✅ 已就位，119 个模块 / 约 1.9MB（不含 `.venv` 与 `data/`） |
 | 引擎 Python | ≥ 3.10（3.11–3.13 最佳） | 由 `setup` 自动定位；系统 `python3` 若为 3.9 则不可用 |
 | 依赖 | openai / httpx / requests / python-dotenv（约 42MB） | 由 `setup --minimal` 自动安装 |
 | 可选依赖 | numpy / fastembed / onnxruntime | **仅向量记忆用，默认不装**（见下文） |

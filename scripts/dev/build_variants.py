@@ -26,7 +26,7 @@
 剔除规则（密钥 / 虚拟环境 / 记忆数据 / 字节码 / 构建工具）直接复用
 `package_skill.py`，不在这里重写一遍：那是安全边界，只能有一个实现。
 
-同时做三件防漂移的检查（`--strict` 下失败即中止）：
+同时做五件防漂移的检查（`--strict` 下失败即中止）：
   1. 契约完整性：技能根 / 纯文档版 / MCP 版的文档必须覆盖引擎真实存在的端点、状态、
      错误码；端点本身从 `engine_bridge.py` 的路由里抠出来当基准，两个方向都核对。
   2. 版本一致性：`VERSION` 与**每一份** SKILL.md（技能根那份 + 各薄壳那份，
@@ -35,6 +35,10 @@
   3. 铁律完整性：技能根 / MCP 版 / 纯文档版三份各写一份七条铁律，措辞按形态定制
      （那是接口不同，该不同），但任何一条被漏改或整条丢掉都会改变 ta 的性格 ——
      按 `RULES_ANCHORS` 的核心短语逐条核对。
+  4. 规模数字：文档里「119 个模块 / 约 1.9MB」这类数字，基准由源码算出，两边对不上
+     即报错 —— 手抄的数字没人对账，只会悄悄腐烂（曾漂到 117 / 3.6MB 而无人发现）。
+  5. 路径引用：文档里反引号引用的 `engine/…`、`scripts/…` 等仓库内路径必须真实存在 ——
+     `references/project-overview.md` 的八子层表格就曾整列少写一层（`engine/social/`）。
 
 用法：
     python3 scripts/dev/build_variants.py                    # 五形态全出，落 dist/*.zip
@@ -42,7 +46,7 @@
     python3 scripts/dev/build_variants.py --dir              # 出未压缩目录（调试用）
     python3 scripts/dev/build_variants.py --dry-run          # 只预览与检查
     python3 scripts/dev/build_variants.py --list             # 看形态清单
-    python3 scripts/dev/build_variants.py --strict           # 契约/密钥有问题即失败（发布用）
+    python3 scripts/dev/build_variants.py --strict           # 契约/文档/密钥有问题即失败（发布用）
 """
 import argparse
 import json
@@ -143,6 +147,38 @@ DOC_CONTRACT = {
         "tools": False,
     },
 }
+
+
+# ── 文档里的规模数字：基准从源码算，文档只做声明 ──
+# 手抄的数字没人对账，只会在某次「怎么对不上」时才被发现；而引擎涨了模块、文档没跟，
+# 读者（尤其拿它判断安装体量的人）据此决策，错了就是误导。
+# 这里把数字变成一条断言：源码算得出、文档声明得出、两边必须相等。
+# 模块数按目录精确比对；体积是连续量，「约 X MB」本就是近似，给 25% 容差。
+DOC_NUMBER_CLAIMS = (
+    # (文档, 正则, 基准, 基准说明)
+    ("SKILL.md", r"(\d+)\s*个模块\s*/\s*约\s*([\d.]+)\s*MB",
+     "engine_all", "整个 engine/"),
+    ("README.md", r"(\d+)\s*个模块\s*/\s*约\s*([\d.]+)\s*MB",
+     "engine_all", "整个 engine/"),
+    ("references/setup-guide.md", r"(\d+)\s*个模块\s*/\s*约\s*([\d.]+)\s*MB",
+     "engine_all", "整个 engine/"),
+    ("references/project-overview.md", r"八大子层（(\d+)\s*个模块）",
+     "engine_sublayers", "engine/engine/ 八个子层"),
+)
+
+# ── 文档里反引号引用的仓库内路径必须真实存在 ──
+# 这类引用是给读者按图索骥的：`engine/social/laws.py` 少写一层，读者就永远打不开
+# 那个文件 —— 而 markdown 渲染器不会报错，人眼 review 也极难发现（`engine/core/`
+# 恰好存在，却是个同名不同物的基础层，错得最隐蔽）。
+# 判定刻意收窄到这些前缀：裸模块名（`mind.py`）与 `~/...` 运行时路径不校验，
+# 前者定位不到、后者本就不在源码树里，硬报只会制造噪音、把真问题淹掉。
+DOC_REF_PREFIXES = ("engine/", "scripts/", "references/", "variants/", "./")
+DOC_REF_FILES = ("SKILL.md", "README.md",
+                 "references/engine-api.md", "references/project-overview.md",
+                 "references/setup-guide.md")
+# 构建期生成的入口脚本：源码树里没有、发布包里才有，文档引用它们不算漂移。
+# 与 VARIANTS 里 standalone 的 overrides 对应。
+DOC_REF_GENERATED = ("run.sh", "run.cmd")
 
 
 # ────────────────────────────────────────────────────────────
@@ -442,6 +478,106 @@ def check_shells():
     return errors
 
 
+# 数规模时永远跳过的目录：虚拟环境、字节码、运行时数据。
+# 与文档「不含 .venv 与 data/」的口径对齐 —— 否则两边算法不同，门会一直误报。
+_NUM_SKIP_DIRS = (".venv", "__pycache__", "data", ".git")
+
+
+def _module_count(base):
+    """数 base 下的 .py 模块。"""
+    n = 0
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames if d not in _NUM_SKIP_DIRS]
+        n += sum(1 for f in filenames if f.endswith(".py"))
+    return n
+
+
+def _tree_bytes(base):
+    """base 下所有文件的字节总和。"""
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames if d not in _NUM_SKIP_DIRS]
+        for name in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, name))
+            except OSError:
+                pass
+    return total
+
+
+def _number_baselines():
+    """算一遍规模基准：{基准名: (模块数, 字节数或 None)}。"""
+    engine = os.path.join(SKILL_ROOT, "engine")
+    return {
+        "engine_all": (_module_count(engine), _tree_bytes(engine)),
+        "engine_sublayers": (_module_count(os.path.join(engine, "engine")), None),
+    }
+
+
+def check_doc_numbers():
+    """文档里的规模数字必须与源码算出的基准一致，返回错误清单。
+
+    匹配不到声明时**报错而不是放过**：文案一改、正则失配，这道门就静默失效了 ——
+    那比数字写错更危险，因为构建看起来一切正常。这与 check_version 对
+    「没有 version 字段」的处理是同一个道理：缺失本身就是漂移。
+    """
+    errors = []
+    baselines = _number_baselines()
+    for rel, pattern, key, note in DOC_NUMBER_CLAIMS:
+        text = _read(os.path.join(SKILL_ROOT, rel))
+        if not text:
+            errors.append("文档不存在或读不到：%s" % rel)
+            continue
+        m = re.search(pattern, text)
+        if not m:
+            errors.append("%s 里找不到规模数字声明（正则失配，文案改了要同步 "
+                          "DOC_NUMBER_CLAIMS）：%s" % (rel, pattern))
+            continue
+        want_modules, want_bytes = baselines[key]
+        got_modules = int(m.group(1))
+        if got_modules != want_modules:
+            errors.append("%s 写「%d 个模块」，源码实为 %d（口径：%s）"
+                          % (rel, got_modules, want_modules, note))
+        if want_bytes and m.lastindex and m.lastindex >= 2:
+            got_mb = float(m.group(2))
+            real_mb = want_bytes / 1048576.0
+            if real_mb > 0 and abs(got_mb - real_mb) / real_mb > 0.25:
+                errors.append("%s 写「约 %sMB」，源码实为 %.1fMB（偏差超 25%%）"
+                              % (rel, m.group(2), real_mb))
+    return errors
+
+
+def _doc_refs(text):
+    """逐个抠出正文里反引号包裹的仓库内路径，带行号。"""
+    for m in re.finditer(r"`([^`\n]+)`", text):
+        token = m.group(1).strip()
+        if not token.startswith(DOC_REF_PREFIXES):
+            continue
+        if any(ch in token for ch in "<>* "):
+            continue                      # 占位符 / 通配 / 夹带说明的，跳过
+        yield text.count("\n", 0, m.start()) + 1, token
+
+
+def check_doc_refs():
+    """技能根文档里反引号引用的仓库内路径必须真实存在，返回错误清单。
+
+    判定范围见 DOC_REF_PREFIXES：收窄是为了不误报，
+    误报多了这道门就会被绕过，等于没有。
+    """
+    errors = []
+    for rel in DOC_REF_FILES:
+        text = _read(os.path.join(SKILL_ROOT, rel))
+        if not text:
+            continue
+        for lineno, token in _doc_refs(text):
+            target = token.rstrip("/")
+            if os.path.basename(target) in DOC_REF_GENERATED:
+                continue
+            if not os.path.exists(os.path.join(SKILL_ROOT, target)):
+                errors.append("%s:%d 引用了不存在的路径 `%s`" % (rel, lineno, token))
+    return errors
+
+
 def check_shape(spec, arcs):
     problems = []
     for rel in spec.get("must_exist", []):
@@ -510,7 +646,7 @@ def main(argv=None):
     ap.add_argument("--no-secret-scan", action="store_true",
                     help="跳过内容级密钥扫描")
     ap.add_argument("--strict", action="store_true",
-                    help="契约/版本/密钥有问题即失败（发布流水线用）")
+                    help="契约/版本/文档/密钥有问题即失败（发布流水线用）")
     ap.add_argument("--list", action="store_true", help="只打印形态清单")
     args = ap.parse_args(argv)
 
@@ -531,10 +667,12 @@ def main(argv=None):
     ver_errors, version = check_version()
     errors += ver_errors
     errors += check_shells()
+    errors += check_doc_numbers()
+    errors += check_doc_refs()
     for w in warnings:
         print("[build] ⚠️  %s" % w)
     if errors:
-        print("[build] 契约/版本检查：")
+        print("[build] 契约/版本/文档检查：")
         for e in errors:
             print("[build]   ❌ %s" % e)
         if args.strict:
