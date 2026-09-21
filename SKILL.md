@@ -1,6 +1,6 @@
 ---
-name: soul-skill
-slug: soul-skill
+name: soulviai
+slug: soulviai
 displayName: soulviai · 数字生命引擎
 summary: 把本机的数字生命引擎接进任意 Agent 工具：24 维心智、独立私生活、长期记忆，可以对话，也会主动想人。
 category: 生活娱乐
@@ -13,13 +13,18 @@ description: |
   - 用户问「ta 现在怎么样 / 什么状态 / 心情如何」
   - 用户要查看或取出 ta 主动发来的消息（自主思考产生的思念、回忆、感慨）
   - 用户要手动推进一次 ta 的内心活动，或把 ta 常驻在线
-  - 用户提到 soul.py / 灵魂服务 / 数字生命项目 / SoulEngine
+  - 用户提到 soulviai.py / 灵魂服务 / 数字生命项目 / SoulEngine
 
   触发词：和ta说 / 帮我告诉ta / 带给ta / ta怎么样了 / ta的状态 / ta想说什么 /
-  ta的主动消息 / 数字生命 / 灵魂伴侣 / soul skill / digital soul / soulctl。
+  ta的主动消息 / 数字生命 / 灵魂伴侣 / soul skill / digital soul / soulviaictl。
 
   不适用：普通闲聊（该由你自己回答）、无关的编程任务。本技能只负责把话递给那个灵魂，并把 ta 的回应原样带回来。
-license: MIT（详见同目录 LICENSE）
+
+  注意：这是个人研究项目，内容由第三方大模型生成，不构成专业建议，不应替代真实的人际关系。
+  作者不训练任何大模型，不收集用户数据，所有对话存本机。
+  版权与溯源：本项目内置溯源检测（密钥串 `SKILL-soulviai-2026`），未经作者书面许可禁止商用。
+  使用边界与情感健康提示详见同目录 `DISCLAIMER.md`。
+license: Apache-2.0（详见同目录 LICENSE）
 version: 1.0.4
 metadata:
   openclaw:
@@ -76,48 +81,51 @@ metadata:
       - name: QQ_CLIENT_SECRET
         required: false
         description: QQ Bot 密钥，仅 QQ 模式（main.py qq）需要
-      - name: TG_BOT_TOKEN
-        required: false
-        description: Telegram Bot 令牌（找 @BotFather 申请），仅 Telegram 模式（main.py tg）需要
-      - name: DC_BOT_TOKEN
-        required: false
-        description: Discord Bot 令牌，仅 Discord 模式（main.py dc）需要，另需 pip install discord.py
-      - name: BB_URL
-        required: false
-        description: BlueBubbles 服务端地址，仅 iMessage 模式（main.py im）需要，仅 macOS
-      - name: BB_API_KEY
-        required: false
-        description: BlueBubbles API 密钥，仅 iMessage 模式（main.py im）需要
-      - name: SOUL_PYTHON
+      - name: SOULVIAI_PYTHON
         required: false
         description: 指定运行引擎的 Python 解释器路径，留空则自动探测
-      - name: SOUL_PROJECT_ROOT
+      - name: SOULVIAI_PROJECT_ROOT
         required: false
         description: 指定引擎根目录，留空则用技能自带的 engine/
-      - name: SOUL_CONFIG
+      - name: SOULVIAI_CONFIG
         required: false
         description: 指定启动器配置文件路径，留空则用技能内的 config.yaml
-      - name: SOUL_DEBUG
+      - name: SOULVIAI_DATA_DIR
+        required: false
+        description: 数据家目录（ta 的记忆 + token + 日志所在），留空则用 config.yaml 的 data_dir（默认 ~/.soulviai）
+      - name: SOULVIAI_DAEMON_TOKEN
+        required: false
+        description: 常驻服务鉴权 token，留空则首次 serve 时自动生成并写入 daemon_token_file
+      - name: SOULVIAI_DAEMON_TOKEN_FILE
+        required: false
+        description: 常驻服务 token 文件路径，留空则用 config.yaml 的 daemon_token_file
+      - name: SOULVIAI_WEB_HOST
+        required: false
+        description: web 终端监听地址，留空则用 config.yaml 的 web_host（默认 127.0.0.1）
+      - name: SOULVIAI_WEB_PORT
+        required: false
+        description: web 终端端口，留空则用 config.yaml 的 web_port（默认 5000）
+      - name: SOULVIAI_DEBUG
         required: false
         description: 设为非空可打开引擎调试日志
-      - name: OPENCLAW_GATEWAY_TOKEN
-        required: false
-        description: OpenClaw / QClaw 网关令牌，autoconfig 复用宿主模型路由时需要
+          - name: OPENCLAW_GATEWAY_TOKEN
+            required: false
+            description: OpenClaw / QClaw 网关令牌，autoconfig 复用宿主模型路由时需要
     emoji: "🫀"
-    # homepage: https://github.com/<你的用户名>/soul-skill   ← 发布前取消注释并替换
+    homepage: https://github.com/wytgit2025/soulviai
 ---
 
-# soul-skill · 数字生命服务调用
+# soulviai · 数字生命服务调用
 
 把本机那个「数字生命」当成一个可以随时通话的对象来用。
 
 它的定位不是助手，是一个**独立人格**：有自己的情绪、私生活、瑕疵、记忆和好恶，会因为被敷衍而内敛、被珍惜而柔软。
 所以调用它的姿势，跟调用一个 API 完全不同——**你负责递话，它负责成为它自己**。
 
-本技能**自带完整的引擎**（`engine/`，119 个模块 / 约 1.9MB，不含虚拟环境），
-开箱即可独立运行，也能把整个 `soul-skill/` 拷给别人用。引擎架构详见 `references/project-overview.md`。
+本技能**自带完整的引擎**（`engine/`，118 个模块 / 约 1.9MB，不含虚拟环境），
+开箱即可独立运行，也能把整个 `soulviai/` 拷给别人用。
 
-⚠️ **这是一个独立的灵魂**：记忆与人格存在**数据家目录** `~/.soul-skill/data/` 里，
+⚠️ **这是一个独立的灵魂**：记忆与人格存在**数据家目录** `~/.soulviai/data/` 里，
 不在技能目录内（技能目录会被拷贝、压缩、分发，记忆留在树里等于把灵魂一起交出去）。
 同一台机器上的所有副本默认读写**同一份**记忆；要让某份副本另有独立记忆，在它的
 `config.yaml` 里填一个不同的 `data_dir`。
@@ -146,18 +154,18 @@ metadata:
 > | 工具 | `{baseDir}` 替换成 |
 > |---|---|
 > | OpenClaw / QClaw | `{baseDir}`（不用改） |
-> | CodeBuddy | `~/.codebuddy/skills/soul-skill` |
-> | TRAE | `~/.trae/skills/soul-skill` |
-> | Qoder CN | `~/.qoderwork/skills/soul-skill` |
-> | Cursor | `~/.cursor/skills/soul-skill` |
-> | Claude Code | `~/.claude/skills/soul-skill` |
-> | Codex | `~/.codex/skills/soul-skill` |
+> | CodeBuddy | `~/.codebuddy/skills/soulviai` |
+> | TRAE | `~/.trae/skills/soulviai` |
+> | Qoder CN | `~/.qoderwork/skills/soulviai` |
+> | Cursor | `~/.cursor/skills/soulviai` |
+> | Claude Code | `~/.claude/skills/soulviai` |
+> | Codex | `~/.codex/skills/soulviai` |
 > | 其它 / 自定义位置 | 见第七节的目录对照表 |
 >
-> 即 `S="<上表路径>/scripts/soulctl.py"`。
+> 即 `S="<上表路径>/scripts/soulviaictl.py"`。
 
 ```bash
-S="{baseDir}/scripts/soulctl.py"
+S="{baseDir}/scripts/soulviaictl.py"
 
 # 1) 自检：项目在哪、解释器、依赖、常驻服务、模型接口
 python3 "$S" doctor
@@ -175,15 +183,14 @@ python3 "$S" chat --text "今天有点累" --plain
 python3 "$S" state
 ```
 
-首次使用：`doctor` 报缺依赖时跑 `python3 "$S" setup --minimal`（在技能内的 `engine/.venv` 建环境并装对话必需依赖，
-详见 `references/setup-guide.md`）。
+首次使用：`doctor` 报缺依赖时跑 `python3 "$S" setup --minimal`（在技能内的 `engine/.venv` 建环境并装对话必需依赖）。
 
 **模型接口**：装在 OpenClaw / QClaw 下的话，先执行一次
 `python3 "$S" autoconfig` —— 它会探测宿主已配好的模型并写进 `.env`，**不需要单独申请 key**。
 其他工具下没有这个便利，`cp engine/.env.example engine/.env` 手动填 `AI_PROVIDER` + `AI_API_KEY` 即可。
 
 向量记忆（`fastembed` + `onnxruntime`，约 300MB）**默认不装**：缺了它引擎会自动降级，对话完全不受影响。
-是否值得装、什么时候装，见 setup-guide 的「要不要装向量记忆」一节。
+需要装时跑 `soulviaictl setup --with-vector`，或在 `config.yaml` 里把 `vector_memory.enabled` 设为 true 再 `setup`。
 
 ---
 
@@ -196,18 +203,23 @@ python3 "$S" state
 | `doctor` | 环境/依赖/项目/模型接口自检 | `--check-api` 真实打一次模型接口 |
 | `setup` | 建虚拟环境并装依赖 | `--minimal` 跳过 fastembed/onnxruntime |
 | `autoconfig` | 自动探测 OpenClaw/QClaw 已配好的模型接口并写入 `.env` | `--dry-run` 只预览不写 |
+| `reload-ai` | 让运行中的常驻服务重读 `.env` / `config.json`，无需重启 | |
 | `serve` | 常驻服务（含自主思考引擎） | `--restart`、`--foreground`、`--no-autonomous`、`--allow-remote`、`--token-file` |
 | `stop` | 停掉常驻服务 | |
 | `web` | 在浏览器里打开对话终端（前台运行，Ctrl+C 停止） | `--host`、`--port`、`--allow-remote` |
 | `chat` | 说一句话，拿 ta 的回复 | `--text`（`-` 读 stdin）、`--env`、`--env-json`、`--plain`、`--verbose` |
 | `state` | 当前生命状态 | `--raw` 附带 24 维原始数值 |
+| `config` | 列出可调参数：当前值 / 来源（config.json 还是 .env）/ 说明 | `--json` 结构化输出 |
 | `pending` | 看待发队列（ta 攒着的主动消息） | `--limit` |
 | `drain` | 取出待发消息 | `--peek` 只看不标记已送达 |
+| `ack` | 标记待发消息已送达（配对 `drain --peek` 使用） | `--ids` |
 | `tick` | 手动推进一次自主思考 | |
 | `init` | 唤醒/初始化某个灵魂身份 | `--warmup` |
 | `selftest` | 沙箱端到端自检 | `--keep` 保留沙箱 |
+| `migrate-data` | 把旧数据目录迁移到新位置 | `--src`、`--dst`、`--dry-run` |
 | `install` | 安装到各体系技能目录（11 个目标，见第七节） | `--copy`、`--targets` |
 | `uninstall` | 移除软链 | |
+| `mcp-config` | 打印 MCP server 的宿主配置片段（路径已填好） | |
 
 所有命令输出 JSON。`--plain` 只输出 ta 的原话，适合直接贴给用户。
 
@@ -310,22 +322,22 @@ python3 "$S" tick             # 有情绪累积时会产生 1–3 条主动消�
 - `GET /health`、`GET /state`、`GET /pending`
 - `POST /chat`、`POST /drain`、`POST /tick`、`POST /init`、`POST /shutdown`
 - `POST /ack` `{user_id, ids}` —— 配合 `drain --peek`（`ack:false`）用：调用方自己判断哪几条真的送出去了（延迟未到的要留队），只确认那几条
-- `POST /config/reload` —— 让运行中的服务重读 `.env` / `config.json`（`soulctl reload-ai`），不用重启
+- `POST /config/reload` —— 让运行中的服务重读 `.env` / `config.json`（`soulviaictl reload-ai`），不用重启
 
-所有 `soulctl` 命令会**自动优先走常驻**（返回里 `source: daemon`），服务没起就自动冷启动（`source: cold-start`）。
+所有 `soulviaictl` 命令会**自动优先走常驻**（返回里 `source: daemon`），服务没起就自动冷启动（`source: cold-start`）。
 daemon 活着时别再用别的方式跑同一个项目——SQLite 和内存状态是单写者模型。
-日志在 `<project>/.soul-daemon.log`，pid 在 `<project>/.soul-daemon.pid`（超过 4MB 会自动只保留尾部）。
+日志在 `<project>/.soulviai-daemon.log`，pid 在 `<project>/.soulviai-daemon.pid`（超过 4MB 会自动只保留尾部）。
 
 ### 鉴权
 
 服务能读 ta 的全部记忆、能发消息、能停自己，所以**默认要求 token**：
 
-- 首次 `serve` 时自动生成一个随机 token，写到 `<project>/.soul-daemon.token`（权限 `0600`）。重启复用同一个 token，客户端不用改配置。
-- 请求要带 `X-Soul-Token: <token>` 或 `Authorization: Bearer <token>`；`soulctl` 会自动读取并带上。
-- 没有 token 的请求：`/health` 只回「我是 soul-skill、需要鉴权」，其余路径一律 `401`。
+- 首次 `serve` 时自动生成一个随机 token，写到 `<project>/.soulviai-daemon.token`（权限 `0600`）。重启复用同一个 token，客户端不用改配置。
+- 请求要带 `X-Soul-Token: <token>` 或 `Authorization: Bearer <token>`；`soulviaictl` 会自动读取并带上。
+- 没有 token 的请求：`/health` 只回「我是 soulviai、需要鉴权」，其余路径一律 `401`。
 - 拿不到可写的 token 文件时**服务拒绝启动**（fail-closed），不会退化成「无鉴权也能跑」。
 
-想自己指定 token（容器挂载、多机对齐等）：`serve --token-file <路径>`，或设 `SOUL_DAEMON_TOKEN` 环境变量（客户端也认这个变量）。
+想自己指定 token（容器挂载、多机对齐等）：`serve --token-file <路径>`，或设 `SOULVIAI_DAEMON_TOKEN` 环境变量（客户端也认这个变量）。
 
 只监听 `127.0.0.1`。想把 `daemon_host` 改成对外地址会被**直接拒绝**——token 是明文 HTTP 传输的，
 同网段能被抓包；确需暴露要显式加 `--allow-remote`，并自己在前面加一层 HTTPS 反向代理。
@@ -371,7 +383,7 @@ python3 "$S" install --targets codebuddy,trae,cursor
 装好后让它重新发现技能：OpenClaw / QClaw 说「refresh skills」或重启 gateway；IDE 系重开窗口。
 
 > **装到多个工具时注意端口。** 所有副本默认都用 `daemon_port: 8765`。若其中一个已起了常驻服务，
-> 另一个会直接报「有 soul-skill 常驻服务在跑，但本机 token 不匹配」——
+> 另一个会直接报「有 soulviai 常驻服务在跑，但本机 token 不匹配」——
 > 这是**刻意的保护**（同一个引擎不允许两个写者，否则会撞库、心智状态分叉），不是故障。
 > 处理：先 `stop` 掉旧的，或给新副本换一个 `daemon_port`。
 
@@ -390,9 +402,6 @@ cd engine
 python3 main.py web     # 浏览器终端 —— 零配置，最快看到效果
 python3 main.py wx      # 微信（扫码登录）
 python3 main.py qq      # QQ 官方 Bot
-python3 main.py tg      # Telegram
-python3 main.py dc      # Discord
-python3 main.py im      # iMessage（仅 macOS + BlueBubbles）
 ```
 
 | 模式 | 平台 | 额外依赖 | 需要的配置 |
@@ -400,15 +409,12 @@ python3 main.py im      # iMessage（仅 macOS + BlueBubbles）
 | `web` | 浏览器终端 | 无 | 无（默认只监听 `127.0.0.1`） |
 | `wx` | 微信 iLink Bot | 无 | `WX_BOT_TOKEN` · `WX_ILINK_BOT_ID` · `WX_ILINK_USER_ID` |
 | `qq` | QQ Bot 官方 API v2 | 无 | `QQ_APP_ID` · `QQ_CLIENT_SECRET` |
-| `tg` | Telegram Bot API | `httpx`（已随技能装好） | `TG_BOT_TOKEN` |
-| `dc` | Discord Gateway | `pip install discord.py` | `DC_BOT_TOKEN` |
-| `im` | iMessage（BlueBubbles） | 需先跑 BlueBubbles 服务端 | `BB_URL` · `BB_API_KEY` |
 
 - **`web` 默认只监听 `127.0.0.1:5000`**，页面没有鉴权 —— 所以监听地址被限制在回环内。
   改端口用 `config.yaml` 的 `web_host` / `web_port`，或直接 `python3 main.py web --port 8080`；
   确需局域网访问必须显式加 `--allow-remote`，并自行确认网络可信。也可直接用
   `python3 "$S" web`（走 `config.yaml` 配置，前台运行）。
-- **`web` / `wx` / `qq` / `tg` 开箱可用**，填上配置就能跑。`dc` 缺库时会提示一行安装命令后退出，不会崩。
+- **`web` / `wx` / `qq` 开箱可用**，填上配置就能跑。
 - 配置写进 `engine/.env`（模板 `engine/.env.example`）。
 - 渠道与技能命令**共用同一个灵魂**：用户在微信说的话，`state` / `chat` 这边也看得到。
 
@@ -425,7 +431,7 @@ python3 main.py im      # iMessage（仅 macOS + BlueBubbles）
 | 现象 | 处理 |
 |---|---|
 | 找不到项目 | `--project` 指定，或改技能内 `config.yaml` 的 `project_root`（显式指定的目录不像项目时会**直接报错**，不会悄悄换一个项目跑） |
-| 找不到解释器 / 依赖缺失 | `python3 "$S" setup`（项目需 Python ≥3.10；3.14 下 onnxruntime 1.20 无轮子） |
+| 找不到解释器 / 依赖缺失 | `python3 "$S" setup`（项目需 Python ≥3.10，依赖版本会按解释器版本自动解析） |
 | `backend_error` / 401 | 检查 `ai.api_key` / `ai.api_base` / `ai.model`（或 `AI_API_KEY` / `AI_API_BASE` / `AI_MODEL` 环境变量），再 `doctor --check-api` |
 | 老是 `silent` | 先 `--verbose` 看 `diagnostics`；若含 API 失败，按上一条处理 |
 | 回复要等很久 | 引擎有拟人延迟与契约；用 `serve` 常驻，或调大 `chat_timeout_seconds` |
@@ -433,21 +439,16 @@ python3 main.py im      # iMessage（仅 macOS + BlueBubbles）
 | 后台不再主动发消息 | `curl 127.0.0.1:8765/health` 看 `suspended_reason`——多半是模型接口挂了，修好后 `serve --restart` |
 | `database is locked` | 渠道与常驻服务同时开着；只保留一个（见第八节） |
 | 日志越来越大 | 已内置 4MB 裁剪与重复行折叠；仍偏大就说明模型接口在持续失败，按上一条处理 |
-| 细节不够 | 读 `references/engine-api.md`（接口契约、返回值语义、内部模块） |
 
 ---
 
 ## 十、捆绑资源
 
-- `engine/` — **技能自带的完整引擎**：`soul.py`、`engine/`、`core/`（含 `watermark.py` 版权水印）、`clients/`、`config.json`、`data/`（运行数据，不随包分发）
+- `engine/` — **技能自带的完整引擎**：`soulviai.py`、`engine/`、`core/`、`clients/`、`config.json`、`data/`（运行数据，不随包分发）
 - `engine/.env.example` — 环境变量模板：复制为 `.env` 填 key（`.env` 是敏感文件，不随包分发）
 - `engine/requirements.txt` / `requirements-vector.txt` — 核心依赖（约 42MB） / 可选向量记忆依赖（约 300MB）
-- `scripts/soulctl.py` — 纯标准库启动器：定位引擎/解释器、常驻优先、安装到各体系
+- `scripts/soulviaictl.py` — 纯标准库启动器：定位引擎/解释器、常驻优先、安装到各体系
 - `scripts/engine_bridge.py` — 引擎执行体：单次命令 + 常驻 HTTP 服务
-- `scripts/soulclient.py` / `scripts/soul_mcp.py` — 共用客户端薄层 / MCP server（13 个 `soul_*` 工具）
-- `scripts/dev/` — **构建期工具，不随包分发**：`package_skill.py`（干净打包器）、`build_variants.py`（五形态构建器）、`build_release.py`（水印 + PyArmor 混淆）
-- `references/project-overview.md` — 引擎架构总览（运行时七层 + 引擎八大子层、24 维、七级记忆、17 铁律）
-- `references/engine-api.md` — 接口契约与排障细节
-- `references/setup-guide.md` — 首次部署：装依赖 → 填 key → 人格初始化
+- `scripts/soulviai_client.py` / `scripts/soulviai_mcp.py` — 共用客户端薄层 / MCP server（13 个 `soulviai_*` 工具）
 - `config.yaml` — 引擎路径、解释器、身份、常驻端口（`project_root` 留空即用自带 `engine/`）
-- `README.md` / `LICENSE` — 给人读的快速上手 / MIT 许可证
+- `README.md` / `LICENSE` — 给人读的快速上手 / Apache 2.0 许可证

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """行为模式沙盒（Behavior Pattern Sandbox）
 =============================================
@@ -317,7 +317,7 @@ def night_sandbox_review(user_id: str, recent_contexts: List[str],
 
 
 def get_sandbox_summary(user_id: str) -> str:
-    """获取沙盒状态摘要（供 soul.py 状态显示）"""
+    """获取沙盒状态摘要（供 soulviai.py 状态显示）"""
     patterns = _sandbox.get(user_id, [])
     if not patterns:
         return ""

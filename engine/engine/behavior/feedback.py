@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """反馈学习闭环
 评估每轮对话的质量，调整后续互动策略。

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """JSON 持久化迁移脚本：将全项目 JSON 文件读写迁移到 JsonStore
 用法: python -m core.migrate_json_store

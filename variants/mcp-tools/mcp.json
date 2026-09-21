@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "soulviai": {
+      "command": "python3",
+      "args": [
+        "/把这里换成绝对路径/soulviai/scripts/soulviai_mcp.py"
+      ]
+    }
+  }
+}

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """内生真人行为决策层 — Endogenous Behavior Decider
 ==========================================================

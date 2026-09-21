@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """统一日志与安全执行工具
 替代全代码库的 try/except:pass 模式，提供：
@@ -16,8 +16,8 @@ from functools import wraps
 
 T = TypeVar("T")
 
-# ── 调试开关（环境变量 SOUL_DEBUG=1 显示完整 traceback）──
-_DEBUG = os.environ.get("SOUL_DEBUG", "")
+# ── 调试开关（环境变量 SOULVIAI_DEBUG=1 显示完整 traceback）──
+_DEBUG = os.environ.get("SOULVIAI_DEBUG", "")
 
 
 def _format_exception(e: Exception, context: str = "") -> str:
@@ -28,14 +28,44 @@ def _format_exception(e: Exception, context: str = "") -> str:
     return f"[{context}] {type(e).__name__}: {e}"
 
 
+# 同一处、同样的错，在这个窗口内只记一次。
+#
+# 为什么要去重：这套代码库正打算把大量 `except: pass` 逐步改成 log_error，而其中
+# 有每秒执行一次的 tick（生命引擎）。不去重的话，一个每秒失败的地方一天能写进
+# 八万多行 error_log —— 「多记日志」这件事自己就变成了故障。
+# 去重之后 error_log 的语义变成「每个不同的失败每分钟至多一行」，可以直接当信号看。
+_DEDUP_WINDOW_SECONDS = 60.0
+_recent_errors = {}
+_MAX_TRACKED = 500
+
+
+def _should_record(source: str, message: str) -> bool:
+    key = (source, str(message)[:120])
+    now = time.time()
+    last = _recent_errors.get(key)
+    if last is not None and now - last < _DEDUP_WINDOW_SECONDS:
+        return False
+    if len(_recent_errors) >= _MAX_TRACKED:
+        for k in [k for k, t in _recent_errors.items()
+                  if now - t >= _DEDUP_WINDOW_SECONDS]:
+            _recent_errors.pop(k, None)
+        if len(_recent_errors) >= _MAX_TRACKED:
+            _recent_errors.clear()      # 宁可多重记，也不让它无限长
+    _recent_errors[key] = now
+    return True
+
+
 def log_error(source: str, message: str, exc_info: bool = False):
-    """统一错误日志输出
+    """统一错误日志输出（同一处同样的错每 60 秒只记一次，见上面去重说明）
 
     Args:
         source: 来源模块标识（如 "mind.spontaneous_fluctuation"）
         message: 日志消息
         exc_info: 是否附加异常堆栈
     """
+    if not _should_record(source, message):
+        return
+
     if exc_info:
         tb = traceback.format_exc()
         print(f"[ERROR:{source}] {message}\n{tb}", file=sys.stderr)
@@ -60,6 +90,8 @@ def log_error(source: str, message: str, exc_info: bool = False):
         )
         conn.commit()
         conn.close()
+    # 兜底中的兜底：日志系统自己写库失败时无处可报，只能放弃 ——
+    # 但上面那行 stderr 已经打出去了，不会完全不留痕。
     except Exception:
         pass
 

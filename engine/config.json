@@ -38,18 +38,34 @@
       "max_delay_seconds": 120
     }
   },
+  "env_auto": {
+    "_note": "环境信息自动采集：定位 / 天气，三个源都免 Key（ip-api.com 定位，被限流时用 ipwho.is 兜底；Open-Meteo 天气 + 地理编码）。enabled=false 可整体关掉，也可逐项关（location / weather）。不想暴露真实位置就填 city（如 \"上海\"）：填了完全不碰 IP 定位，城市名会走 Open-Meteo 地理编码换成经纬度，天气照常可用。cold_start_wait_seconds 是冷启动最多阻塞多久，必须小于 timeout_seconds —— 定位+天气最坏要 2 倍超时，等满也拿不到东西，只是白卡对话。所有失败静默降级，拿不到就当没有，不影响聊天。调用方用 chat --env 显式注入时优先于这里自采的结果。当日资讯不在这里 —— 交给搜索（behavior/search.py）按需查。",
+    "enabled": true,
+    "location": true,
+    "weather": true,
+    "city": "",
+    "ttl_minutes": 30,
+    "timeout_seconds": 4,
+    "cold_start_wait_seconds": 1.5
+  },
+  "life": {
+    "_note": "生命体征。这三个键是「ta 有多容易累」的旋钮。social_fatigue_tired / overload 是社交疲劳的两道档位线，body.py 的提示词约束、生命门控、状态文案共用这一套（以前三处各写各的 0.4/0.6、0.5/0.7、0.55/0.75，同一份状态被判成不同的档）。social_fatigue_rest_multiplier 是休息时段（独处/自愈/发呆，以及 22:00-07:00 深夜）的恢复倍率。注意社交疲劳现在**只由真实交互累加**（每条约 +0.01~0.04），靠时间恢复降下来，默认值下一夜能回满；想让它更热情就调低 overload、或把 rest_multiplier 调大。",
+    "social_fatigue_tired": 0.55,
+    "social_fatigue_overload": 0.75,
+    "social_fatigue_rest_multiplier": 10
+  },
   "user_mbti_type": "ENFJ",
   "lang": "zh",
   "memory": {
-    "emotional_distortion_rate": 0.15
+    "_note": "vector_enabled=false 可整体关掉向量语义检索（记忆本身不受影响，只是退回关键词匹配）。下不动 BAAI/bge-small-zh-v1.5 的机器建议关掉：模型下载会白耗带宽，HF 的进度条还会插进终端对话里。emotional_distortion_rate 是情绪滤镜对记忆的改写强度。",
+    "emotional_distortion_rate": 0.15,
+    "vector_enabled": true
   },
-  "license": {
-    "_note": "授权与订阅。key 留空 = 免费模式（终端对话/状态可用，微信·QQ·Telegram·Discord·iMessage·Web 终端需要 pro）。enforce: off=完全不校验 / soft=只提示不拦截（默认，避免误伤老用户）/ hard=超范围时拒绝运行。断网时按 data/license_session.json 缓存 + grace_hours 宽限期沿用上次结论。环境变量 SOUL_LICENSE_KEY / SOUL_LICENSE_API / SOUL_LICENSE_ENFORCE 优先级更高，SOUL_NO_LICENSE=1 可整体跳过。",
-    "key": "",
-    "api": "https://api.soulviai.com",
-    "enforce": "soft",
-    "timeout_seconds": 5,
-    "grace_hours": 72
+  "growth": {
+    "_note": "岁月成长引擎（engine/engine/life/growth.py 的 GROWTH_CONFIG）。本段留空 = 全部用代码默认值；要调就按这些键名写，**写了才覆盖**：years_advance_daily_min / years_advance_daily_max（每日岁月沉淀增速）、growth_weight_years / growth_weight_healing / growth_weight_fatigue / growth_weight_bond（阶段 composite 的四项权重，注意 fatigue 那项在公式里是负号）、rf_decay_min / rf_decay_max（高倦怠时每日自然恢复）、rf_buildup_chance / rf_buildup_min / rf_buildup_max / rf_buildup_years_threshold（倦怠的自然产生）、rf_recovery_threshold（开始自然恢复的阈值）、stage_fuzziness（阶段模糊边界宽度）、regression_compensation_rate / regression_compensation_decay_days（阶段倒退后的加速补偿）。阶段判定公式见 growth.compute_growth_stage。"
+  },
+  "evolution": {
+    "_note": "自我进化引擎（engine/engine/life/evolution.py 的 _EVOLUTION_CONFIG）。可用键：enabled（置 false 会关掉经历驱动成长、退回纯时间驱动）、max_additional_dimensions（最多允许长出几个新性格维度）、dimension_evolution_threshold、strategy_adjustment_interval_hours、strategy_adjustment_max_delta、experience_growth_weight（按事件类型给成长加权的字典）。"
   },
   "_onboarding_done": false
 }

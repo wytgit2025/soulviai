@@ -1,10 +1,10 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """深层用户人格模型 — User Persona Engine
 ==============================================
 以LLM语义分析为核心，建立用户12维性格特质、行为模式、情绪周期。
-彻底替代 engine/profile.py 的关键词匹配画像。
+彻底替代 user_insights.py 的关键词匹配画像。
 
 架构：
   每日对话摘要 → LLM深度分析 → user_personality表(12维+模式+周期)

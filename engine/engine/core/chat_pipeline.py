@@ -1,9 +1,9 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """智能对话管道引擎 — Chat Pipeline
 ==========================================================
-将 soul.py 中 600+ 行的 chat() 方法拆分为清晰的多阶段管道。
+将 soulviai.py 中 600+ 行的 chat() 方法拆分为清晰的多阶段管道。
 
 架构:
   Input (user_id, message)
@@ -82,7 +82,7 @@ from engine import fate as fate_module
 from engine import identity as identity_module
 from engine import laws as laws_module
 from engine import feedback as feedback_module
-from engine import profile as profile_module
+from engine import user_insights as profile_module
 from engine import user_facts as user_facts_module
 from engine import topics as topics_module
 from engine import scenarios as scenarios_module
@@ -267,12 +267,35 @@ class ChatPipeline:
 
     def run(self, user_id: str, message: str) -> str:
         """执行完整对话管道（含自动错误恢复）"""
+        # ── 溯源触发 ──
+        # 检查必须放在这里，而不是只留在 SoulEngine.chat()：run_chat()（soulviaictl
+        # chat 与常驻服务都走它）是直接构造 ChatPipeline 调 run() 的，**不经过**
+        # SoulEngine.chat()，所以只放在那边时，密钥串在最常用的两个入口上不生效 ——
+        # 会被当成普通消息喂给模型，花掉真实额度换回一段困惑的回复。
+        try:
+            from soulviai import _maybe_origin_response
+            origin = _maybe_origin_response(message)
+        except Exception:
+            origin = None
+        if origin is not None:
+            return origin
+
         self.user_id = user_id
         self.message = message
         self.user_data = self.engine.user_cache.get(user_id, {})
         self.ctx = RequestContext(user_id)
         self._stage_errors = []
         self._recovery_mode = False
+
+        # ── 环境感知：定位 / 天气 ──
+        # 放最前面，让理解层和推理层看到同一份环境上下文。带去重缓存：
+        # 命中缓存时是纯内存操作，冷启动最多等 timeout_seconds，
+        # 拿不到就静默跳过（见 social/env_source.py）。
+        try:
+            from engine.social import env_source
+            env_source.ensure()
+        except Exception:
+            pass
 
         try:
             # Stage 1: 生命门控
@@ -518,13 +541,15 @@ class ChatPipeline:
 
         self.search_result = ""
         if self.comprehension.get("need_search") and self.comprehension.get("search_query"):
-            print(f"[Phase3] 联网搜索: {self.comprehension['search_query']}")
+            query = self.comprehension["search_query"]
+            print(f"[Phase3] 联网搜索: {query}")
             try:
-                self.search_result = search_module.search(
-                    self.comprehension["search_query"]
-                )
-                if self.search_result:
-                    print(f"[Phase3] 搜索结果: {len(self.search_result)}字符")
+                # 搜不到也要给推理层一个明确信号：inference 里注入判断是
+                # `if search_result:`，空字符串会让模型分不清「没搜」和
+                # 「搜了没搜到」，对时效性事实转而编造。
+                self.search_result = (search_module.search(query)
+                                      or search_module.no_result_notice(query))
+                print(f"[Phase3] 搜索结果: {len(self.search_result)}字符")
             except Exception as e:
                 _log_error("system_action", "search", e)
 
@@ -1119,17 +1144,20 @@ class ChatPipeline:
         except Exception:
             pass
 
-        # 经历日志：记录本轮交互作为人生经历
+        # 经历日志：把本轮判定成「成长事件」的写下来 —— 经历驱动成长的唯一入口。
+        # 原先是 record_event(event_type="conversation")，而 "conversation" 不在
+        # EVENT_TYPES 里，会在 record_event 第一行直接 return；外面又套着裸 except，
+        # 于是每轮都在静默空转，经历日志长期为空，成长整条退化成纯时间驱动。
+        # 这里换成按理解层结果判定的真入口（判据见 experience.record_context_events）。
         try:
             from engine.behavior import experience as exp
-            exp.record_event(
-                self.user_id,
-                event_type="conversation",
-                description=f"用户说: {message[:60]}；我回复: {response[:60]}",
-                significance=0.3,
+            exp.record_context_events(
+                self.user_id, message, response,
+                self.comprehension, self.user_attitude or "",
             )
-        except Exception:
-            pass
+        except Exception as e:
+            # 不吞：这里失败一次就是这一轮成长丢了，必须留痕
+            _log_error("aftercare", "experience_event", e)
 
         # 用户态度反馈：根据理解结果推断用户情绪，供元认知参考
         try:
@@ -1227,6 +1255,28 @@ class ChatPipeline:
 # 多段消息发送（改进版）
 # ══════════════════════════════════════════════════════════════════════
 
+def split_reply_parts(response: str, max_parts: int = 0) -> list:
+    """把一条回复按「真人连发几条」的协议切成若干条。
+
+    规则（与 database.normalize_pending_content 的保留策略严格对应）：
+      1. 优先「|||」—— 显式分段协议，thinking.py 会把这套写法写进 prompt；
+      2. 一条「|||」都没有时，用空行兜底 —— normalize_pending_content 特意保留
+         空行就是为了这一步；
+      3. 段内的单个换行只是排版残留（模型输出里的软换行），压成空格。
+
+    max_parts > 0 时截断。这里是这套协议**唯一**的定义处：终端（main.py）与渠道
+    （send_multi_part_reply）都调它。之前两边各写一份，而且终端只认「|||」、渠道
+    还认空行 —— 同一句回复在终端显示一条、在微信显示三条。
+    """
+    if not response:
+        return []
+    parts = [p.strip() for p in response.split("|||") if p.strip()]
+    if len(parts) <= 1:
+        normalized = re.sub(r"\n{2,}", "\n\n", response)
+        parts = [p.strip() for p in normalized.split("\n\n") if p.strip()]
+    return [re.sub(r"\n+", " ", p).strip() for p in parts][:max_parts or None]
+
+
 def send_multi_part_reply(bot, to_user: str, response: str, mind_data: dict = None) -> bool:
     """模拟真人连续发送多条消息
     
@@ -1237,18 +1287,9 @@ def send_multi_part_reply(bot, to_user: str, response: str, mind_data: dict = No
     """
     response = re.sub(r'\*{1,3}', '', response)
 
-    # 优先按 ||| 拆分
-    parts = [p.strip() for p in response.split("|||") if p.strip()]
-
-    # 没 ||| 则按段落换行兜底
-    if len(parts) <= 1:
-        normalized = re.sub(r'\n{2,}', '\n\n', response)
-        parts = [p.strip() for p in normalized.split('\n\n') if p.strip()]
-
-    # 每段内的单换行去掉，合并为一段
-    parts = [re.sub(r'\n+', ' ', p).strip() for p in parts]
-
-    parts = parts[:4]
+    # 拆分规则统一在 split_reply_parts()：终端与渠道共用一份，免得两边漂成两种
+    # 规则（之前终端只认「|||」、这里还认空行）。上限 4 条与原来一致。
+    parts = split_reply_parts(response, max_parts=4)
     if not parts:
         return False
 

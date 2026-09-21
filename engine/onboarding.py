@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """
 首次启动 · 人格探索问答
@@ -34,103 +34,13 @@ def _check_done(cfg) -> bool:
 
 # ── 语言选择 ──
 
-# 国家 → 语言映射（ip-api.com 返回的 country 字段）
-_COUNTRY_LANG = {
-    # 中文区
-    "China": "zh", "中国": "zh",
-    # 繁体区
-    "Taiwan": "zh_tw", "台湾": "zh_tw", "Hong Kong": "zh_tw", "香港": "zh_tw",
-    "Macau": "zh_tw", "澳门": "zh_tw",
-    # 英语区
-    "United States": "en", "United Kingdom": "en", "Australia": "en",
-    "Canada": "en", "New Zealand": "en", "Ireland": "en", "Singapore": "en",
-    "India": "hi",
-    # 韩语
-    "South Korea": "ko", "대한민국": "ko",
-    # 泰语
-    "Thailand": "th", "ประเทศไทย": "th",
-    # 日语
-    "Japan": "ja", "日本": "ja",
-    # 西语
-    "Spain": "es", "Mexico": "es", "Argentina": "es", "Colombia": "es",
-    "Chile": "es", "Peru": "es", "Venezuela": "es",
-    # 法语
-    "France": "fr", "Belgium": "fr", "Switzerland": "fr", "Canada": "fr",
-    # 葡语
-    "Portugal": "pt", "Brazil": "pt",
-    # 德语
-    "Germany": "de", "Austria": "de",
-    # 俄语
-    "Russia": "ru",
-    # 阿语
-    "Saudi Arabia": "ar", "Egypt": "ar", "United Arab Emirates": "ar",
-    "Iraq": "ar", "Jordan": "ar", "Morocco": "ar",
-}
-
-# 语言代码 → 显示名（英文用于推荐提示）
-_LANG_DISPLAY_EN = {
-    "zh": "简体中文",
-    "zh_tw": "繁體中文",
-    "en": "English",
-    "ko": "한국어",
-    "th": "ไทย",
-    "ja": "日本語",
-    "es": "Español",
-    "fr": "Français",
-    "pt": "Português",
-    "de": "Deutsch",
-    "ru": "Русский",
-    "ar": "العربية",
-    "hi": "हिन्दी",
-}
-
-
-def _detect_language_from_ip() -> str:
-    """通过 IP 定位检测国家 → 返回推荐语言代码，失败返回空"""
-    import urllib.request
-    import json as _json
-    try:
-        req = urllib.request.Request(
-            "http://ip-api.com/json/?fields=country,status",
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = _json.loads(resp.read().decode("utf-8"))
-        if data.get("status") == "success":
-            country = data.get("country", "")
-            return _COUNTRY_LANG.get(country, "")
-    except Exception:
-        pass
-    return ""
+# 注：早期版本曾通过 ip-api.com 自动 IP 定位推断用户国家 → 推荐语言，
+# 该行为与"项目无遥测、不联网"的承诺冲突，已彻底删除（2026-09）。
+# 当前首次启动直接走手动选单；用户想改语言可后续写入 config.json 的 lang 字段。
 
 
 def _select_language() -> str:
-    """首次启动语言选择（自动检测推荐 + 手动选单）"""
-    # ── 尝试 IP 检测 ──
-    detected_lang = _detect_language_from_ip()
-    detected_name = _LANG_DISPLAY_EN.get(detected_lang, "") if detected_lang else ""
-
-    # ── 推荐提示 ──
-    if detected_name:
-        print()
-        print("  🌐 " + "=" * 44)
-        print(f"  🌐  检测到您的所在地，推荐使用「{detected_name}」")
-        print(f"  🌐  Detected location — recommended: {detected_name}")
-        print("  🌐 " + "=" * 44)
-        print(f"\n     按 Enter 使用「{detected_name}」，或输入编号选择其他语言")
-        print()
-        try:
-            inp = input("  >>> ").strip()
-            if inp == "":
-                return detected_lang
-            idx = int(inp) - 1
-            langs = _LANG_LIST
-            if 0 <= idx < len(langs):
-                return langs[idx][1]
-        except (ValueError, EOFError, KeyboardInterrupt):
-            pass
-
-    # ── 完整选单（检测失败 或 用户想换语言） ──
+    """首次启动语言选择（手动选单）。"""
     print("\n  🌐 " + "=" * 44)
     print("  🌐  选择语言 / Select Language / 言語選択")
     print("  🌐 " + "=" * 44)
@@ -145,7 +55,15 @@ def _select_language() -> str:
             idx = int(inp) - 1
             if 0 <= idx < len(langs):
                 return langs[idx][1]
-        except (ValueError, EOFError, KeyboardInterrupt):
+        except (EOFError, KeyboardInterrupt):
+            # EOF 不是「输入不合法」，是「根本没有人在输入」（stdin 被重定向、
+            # 后台运行、docker 没带 -it）。原来它和 ValueError 一起被 pass 掉，
+            # 而下面这段重试没有 sleep —— 无 TTY 时会退化成不带退避的死循环：
+            # 实测 25 秒写出 1.5GB 日志（4100 万行）并打满一个核。
+            # _ask_question 对 EOF 是直接退出的，这里与它对齐。
+            print("\n  " + _("onboarding.exit", "zh"))
+            sys.exit(1)
+        except ValueError:
             pass
         print("  " + "=" * 40)
         print("  " + _("onboarding.lang_invalid", "zh"))
@@ -802,6 +720,19 @@ def run():
     cfg = _load_config()
 
     if _check_done(cfg):
+        return
+
+    # 没有终端就不要问。这份问卷通篇是 input()，而 main.py 是在**模块级**对所有
+    # 模式调它的 —— 于是全新数据目录下 `main.py web` / `serve` / 渠道模式都会先
+    # 弹一道终端问卷，而不是直接起服务；容器、CI、nohup 这类没有 TTY 的环境更是
+    # 直接卡死（stdin 立刻 EOF 的旧行为见 _select_language 的注释）。
+    # 这里选择「跳过」而不是「退出」：引擎照常用默认人格正常跑起来，用户下次在
+    # 终端里启动时再问。代价是 `printf "1\n..." | main.py cli` 这种脚本化答题
+    # 不再生效 —— 那个用法本来也很边缘，不值得拿整个无终端场景去换。
+    try:
+        if not sys.stdin.isatty():
+            return
+    except Exception:
         return
 
     # ── 第 0 步：语言选择 ──

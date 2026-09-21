@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """消息投递控制器 —— 情绪深度绑定版
 ============================================
@@ -70,7 +70,7 @@ def _emotional_threshold(key: str, default: float) -> float:
 # 背景：一次用户消息会流经三处，且每处都各自调用 should_skip_reply()：
 #   1) core/chat_pipeline.py  Stage 3b 选择性回复
 #   2) core/inference.py      拼装 system prompt 时（块7）
-#   3) soul.py                流式通道
+#   3) soulviai.py                流式通道
 # 每次调用都是一次**独立的随机抽样**，后果：
 #   · 实际沉默率被放大成 1-(1-p)^n（p≈0.18 时双抽 → ≈0.33）
 #   · 第 2 次抽中"沉默"时，会把"用最简短的方式"以优先级 1.0 注入 prompt

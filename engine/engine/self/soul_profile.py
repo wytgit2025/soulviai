@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """数字生命个人档案引擎
 轻量壳层：姓名、性别、性格标签。
@@ -120,7 +120,7 @@ def girl_desc(gender: str) -> str:
 
 
 def init_profile(user_id: str, config: dict = None):
-    """初始化个人档案（soul.py ensure_user 时调用）。
+    """初始化个人档案（soulviai.py ensure_user 时调用）。
     如果 auto_generate=True 且名字为空，标记为待自动生成。
     """
     auto_gen = True

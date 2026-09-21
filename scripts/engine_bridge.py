@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
-"""soul-skill · 引擎执行体
+"""soulviai · 引擎执行体
 
 必须由「数字生命项目」自己的解释器运行，且工作目录 = 项目根目录
-（项目的数据全部是相对路径 data/...）。soulctl.py 会自动处理这两件事。
+（项目的数据全部是相对路径 data/...）。soulviaictl.py 会自动处理这两件事。
 
 一次调用只做一件事，最后把结果以单行 JSON 打到真实 stdout。
 引擎内部所有 print（启动横幅、模块日志、调试输出）都会被改道到 stderr，
@@ -117,7 +117,7 @@ class _NoiseTee(object):
         raise OSError("no fileno")
 
 
-# 引擎噪音全部改道 stderr —— 必须在 import soul 之前完成
+# 引擎噪音全部改道 stderr —— 必须在 import soulviai 之前完成
 sys.stdout = _NoiseTee(sys.stderr)
 
 EXIT_OK, EXIT_ERR, EXIT_SILENT, EXIT_QUEUED = 0, 1, 3, 4
@@ -219,7 +219,7 @@ def bootstrap(project=None):
     """代码根挂进 sys.path，工作目录切到**数据家目录**。
 
     这两件事现在指向不同地方：project 是代码（engine/），cwd 是数据
-    （~/.soul-skill，可用 SOUL_DATA_DIR / config.yaml:data_dir 改）。引擎里
+    （~/.soulviai，可用 SOULVIAI_DATA_DIR / config.yaml:data_dir 改）。引擎里
     大量 `data/...` 相对路径都以 cwd 为基准，所以必须切过去；只挂 sys.path
     不切 cwd，就会在启动目录旁边长出一份新的空记忆。
     """
@@ -234,7 +234,7 @@ def bootstrap(project=None):
 def config_path(project, explicit=None):
     if explicit and os.path.isfile(explicit):
         return explicit
-    env = os.environ.get("SOUL_CONFIG")
+    env = os.environ.get("SOULVIAI_CONFIG")
     if env and os.path.isfile(env):
         return env
     return os.path.join(project, "config.json")
@@ -245,9 +245,9 @@ def load_engine(user_id, project=None, config=None, warmup=False):
     cfg_file = config_path(project, config)
     if not os.path.isfile(cfg_file):
         raise RuntimeError("找不到配置文件：%s（用 --config 指定，或放到项目根目录）" % cfg_file)
-    import soul
+    import soulviai
     # SoulEngine 会把 config_path 透传给各子模块，非默认文件名同样有效
-    engine = soul.SoulEngine(cfg_file)
+    engine = soulviai.SoulEngine(cfg_file)
     engine.ensure_user(user_id)
     if warmup:
         try:
@@ -324,19 +324,25 @@ def cmd_doctor(args):
     info["data_root"] = home
     info["db_file"] = os.path.join(data_dir, "db", "soulmate.db")
     info["db_exists"] = os.path.isfile(info["db_file"])
-    info["data_writable"] = os.access(
-        data_dir if os.path.isdir(data_dir) else home, os.W_OK)
+    # 顺着上层找最近的**已存在**目录再判可写。os.access 对不存在的路径恒返回
+    # False，而新手第一次 doctor 时数据目录还没被创建 —— 那份「数据目录不可写」
+    # 的假警报刚好出现在最不能出错的时候：看着像权限问题，实际只是还没建，
+    # 会把人引去 chmod。X_OK 是必需的：往目录里写文件需要可进入该目录。
+    probe = data_dir
+    while not os.path.isdir(probe) and os.path.dirname(probe) != probe:
+        probe = os.path.dirname(probe)
+    info["data_writable"] = os.access(probe, os.W_OK | os.X_OK)
 
     if not info["deps_required_ok"]:
         info["ok"] = False
-        info["hint"] = "缺少必需依赖，运行 `soulctl.py setup`"
+        info["hint"] = "缺少必需依赖，运行 `soulviaictl.py setup`"
         return _emit(info, EXIT_ERR)
 
     # 真正把引擎 import 起来（模块级，不启动后台线程）
     t0 = time.time()
     try:
         bootstrap(project)
-        import soul  # noqa: F401
+        import soulviai  # noqa: F401
         info["engine_import"] = "ok"
         info["engine_import_ms"] = int((time.time() - t0) * 1000)
     except Exception as exc:
@@ -382,6 +388,27 @@ def cmd_init(args):
                   "mind_summary": state.get("mind_summary")})
 
 
+def cmd_check(args):
+    """深度自检：把子系统真跑一遍，断言它们真的留下了副作用。
+
+    与 `selftest` 的分工：selftest 验「命令 → 引擎 → 管道」这条链路通不通；
+    这里验「跑完之后该有的东西有没有留下」。之所以需要，是因为本仓库近一半的
+    try 块是 `except: pass` —— 子系统可以静默变成尸体而没有任何症状（实测深夜
+    复盘曾因一句多余的局部 import 崩在第二步，此后所有日级成长一次没跑过）。
+
+    全程用假模型，不花额度、不依赖外网。检查清单见 engine.core.selfcheck。
+    """
+    engine = load_engine(args.user, args.project, args.config)
+    install_fake_ai(args.fake_reply or "嗯…我在。")
+    from engine.core import selfcheck
+    result = selfcheck.run(engine, args.user)
+    result["command"] = "check"
+    result["user_id"] = args.user
+    result["note"] = ("假模型下的深度自检：只验证各子系统是否真的产生了副作用，"
+                      "不代表回复质量；模型连通性请用 `doctor --check-api`。")
+    return _emit(result, EXIT_OK if result.get("ok") else EXIT_ERR)
+
+
 def install_fake_ai(text):
     """把模型后端替换成固定回复。
 
@@ -411,6 +438,16 @@ def run_chat(engine, user, text, verbose=False, env="", env_json=""):
     env_json: 结构化环境上下文（JSON 字符串或 dict），优先于 env。
     """
     t0 = time.time()
+    try:
+        # 每轮开头把环境来源重置为「引擎可写」。不重置会有个隐性锁死：某一轮
+        # 调用方注入过 env，来源就一直停在 caller，env_source.apply() 之后永远
+        # 让步，引擎自采的天气再也进不来。
+        # 代价是「上一轮说过、这一轮没说」的显式位置会被引擎自采覆盖 —— 这是
+        # 有意的：--env 的契约本来就是「每轮注入」，否则没法区分用户是不是走开了。
+        from engine.social import sensors as _sensors
+        _sensors.reset_origin()
+    except Exception:
+        pass
     if env or env_json:
         try:
             from engine.social import sensors
@@ -418,11 +455,11 @@ def run_chat(engine, user, text, verbose=False, env="", env_json=""):
             if env_json:
                 try:
                     data = json.loads(env_json) if isinstance(env_json, str) else env_json
-                    applied = sensors.set_external_context_json(data)
+                    applied = sensors.set_external_context_json(data, origin="caller")
                 except Exception:
                     applied = False
             if not applied and env:
-                sensors.set_external_context(env)
+                sensors.set_external_context(env, origin="caller")
         except Exception:
             pass
     from engine.core.chat_pipeline import ChatPipeline
@@ -545,6 +582,152 @@ def cmd_state(args):
     return _emit(payload)
 
 
+def cmd_env(args):
+    """查看 / 刷新环境信息（定位、天气）。
+
+    默认读缓存（命中 TTL 就不联网）；--refresh 强制重取一次并注入 sensors。
+    数据源与开关见 engine/engine/social/env_source.py 与 config.json:env_auto。
+    """
+    bootstrap(args.project)
+    payload = {"ok": True, "command": "env", "user": args.user}
+    try:
+        from engine.social import env_source
+    except Exception as exc:
+        payload["ok"] = False
+        payload["error"] = "环境模块加载失败：%s" % exc
+        return _emit(payload)
+
+    try:
+        if getattr(args, "refresh", False):
+            env_source.apply(env_source.refresh(), force=True)
+        else:
+            env_source.ensure()
+    except Exception as exc:
+        payload["ok"] = False
+        payload["error"] = str(exc)
+        return _emit(payload)
+
+    payload.update(env_source.status())
+    payload["text"] = env_source.text()
+    return _emit(payload)
+
+
+# ── 可调参数总览（soulviaictl config）─────────────────────────
+def _config_cell(value) -> str:
+    """把任意配置值渲染成单行短文本。"""
+    if isinstance(value, bool):
+        return "开" if value else "关"
+    if isinstance(value, (int, float)):
+        return "%g" % value
+    if isinstance(value, str):
+        return value or "（空）"
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except Exception:
+        return str(value)
+
+
+def _config_sections(cfg_module, raw):
+    """按元数据清单组装「当前值 + 来源 + 说明」。
+
+    来源分三种，它决定用户该去哪儿改：
+      config.json          写在这个文件里，删掉就回默认
+      .env / 环境变量       优先级高于 config.json
+      默认                 代码里的默认值，想改就在 config.json 里显式写一个
+    清单本身在 core/config.py 的 TUNABLES —— 说明文字只有那一份。
+    """
+    merged = cfg_module.get_section("")
+    out = []
+    for section, spec in cfg_module.TUNABLES.items():
+        cur = merged if section == "" else (merged.get(section) or {})
+        exp = raw if section == "" else (raw.get(section) or {})
+        items = []
+        for key, meta in spec.items():
+            if key.startswith("_"):
+                continue
+            env_hit = ""
+            for name in (meta.get("env") or ()):
+                if os.environ.get(name):
+                    env_hit = name
+                    break
+            explicit = key in exp and exp.get(key) not in (None, "", {}, [])
+            if env_hit:
+                source = ".env/%s" % env_hit
+            elif explicit:
+                source = "config.json"
+            else:
+                source = "默认"
+            if meta.get("secret"):
+                # 密钥只报「有没有」，绝不回显 —— 这个视图可能被截图、被贴群里
+                shown = "已设置" if (env_hit or explicit) else "未设置"
+            else:
+                shown = _config_cell(cur.get(key, meta.get("default")))
+            items.append({"key": key, "value": shown, "source": source,
+                          "desc": meta.get("desc", ""),
+                          "secret": bool(meta.get("secret"))})
+        out.append({"section": section, "title": spec.get("_title") or section,
+                    "items": items})
+    return out
+
+
+def _render_config(sections, cfg_file) -> str:
+    lines = ["", "  soulviai · 可调参数", "  " + "─" * 60,
+             "  配置文件  %s" % cfg_file,
+             "  只列「用户 / 运维值得动」的键；引擎内部算法参数不在内。", ""]
+    for sec in sections:
+        # 顶层段的 section 是空串，标题本身就是「基本」，别打成【基本】基本
+        lines.append("【%s】" % sec["title"] if not sec["section"]
+                     else "【%s】%s" % (sec["section"], sec["title"]))
+        for it in sec["items"]:
+            # 键名都是 ASCII，所以这一列能对齐；值可能出现中文（不保证对齐）
+            lines.append("  %-22s = %s（%s）  %s"
+                         % (it["key"], it["value"], it["source"], it["desc"]))
+        lines.append("")
+    lines.append("  改完不必重启：常驻服务跑 `soulviaictl reload-ai`，"
+                 "其它入口重启即可。")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def cmd_config(args):
+    """列出可调参数：当前值、来源、说明。只读，不动任何文件。"""
+    bootstrap(args.project)
+    payload = {"ok": True, "command": "config"}
+    try:
+        from core import config as cfg_module
+        from core import paths as _paths
+    except Exception as exc:
+        payload["ok"] = False
+        payload["error"] = "配置模块加载失败：%s" % exc
+        return _emit(payload)
+
+    # reload 而不是 load：常驻服务进程里 load() 只跑一次，不停一下会读到启动时那份
+    try:
+        cfg_module.reload()
+    except Exception:
+        pass
+
+    cfg_file = _paths.config_json_path()
+    payload["config_file"] = cfg_file
+    raw = {}
+    try:
+        with open(cfg_file, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except Exception:
+        raw = {}
+
+    try:
+        sections = _config_sections(cfg_module, raw)
+    except Exception as exc:
+        payload["ok"] = False
+        payload["error"] = "组装参数清单失败：%s" % exc
+        return _emit(payload)
+
+    payload["sections"] = sections
+    payload["text"] = _render_config(sections, cfg_file)
+    return _emit(payload)
+
+
 def cmd_pending(args):
     bootstrap(args.project)
     from core import database as db
@@ -617,7 +800,7 @@ def cmd_ack(args):
             db.mark_message_delivered(mid)
             acked.append(mid)
         except Exception as exc:
-            print("[soul-skill] ack 失败 id=%s: %s" % (mid, exc), file=sys.stderr)
+            print("[soulviai] ack 失败 id=%s: %s" % (mid, exc), file=sys.stderr)
     return _emit({"ok": True, "command": "ack", "user_id": args.user,
                   "acked": len(acked), "ids": acked,
                   "remaining": db.count_pending_messages(args.user)})
@@ -675,8 +858,8 @@ AUTONOMOUS_TRIP_WINDOW = 900   # 失败统计窗口（秒）
 # 常驻服务能读 ta 的全部记忆、能发消息，必须挡一道。这里用共享 token：
 # 首次启动生成并落到 0600 的文件里，客户端自动读取，不需要人工配置。
 TOKEN_HEADER = "X-Soul-Token"
-TOKEN_ENV = "SOUL_DAEMON_TOKEN"
-TOKEN_FILE_NAME = ".soul-daemon.token"
+TOKEN_ENV = "SOULVIAI_DAEMON_TOKEN"
+TOKEN_FILE_NAME = ".soulviai-daemon.token"
 
 
 def token_file_path(project, explicit=None):
@@ -770,7 +953,7 @@ class _BackendWatchdog(threading.Thread):
     """
 
     def __init__(self, status):
-        threading.Thread.__init__(self, daemon=True, name="soul-backend-watchdog")
+        threading.Thread.__init__(self, daemon=True, name="soulviai-backend-watchdog")
         self.status = status
         self._stop = threading.Event()
         self._fails = []
@@ -799,11 +982,11 @@ class _BackendWatchdog(threading.Thread):
             self.status["suspended_reason"] = (
                 "模型接口不可用（%s），已暂停自主思考引擎；"
                 "其余后台任务的 LLM 调用已由 core.ai 熔断器一并短路，不再刷日志。"
-                "修好 ai.api_key / ai.model 后跑 `soulctl reload-ai` 就地恢复，"
+                "修好 ai.api_key / ai.model 后跑 `soulviaictl reload-ai` 就地恢复，"
                 "不必重启整个服务。"
                 % ("认证或额度错误" if fatal
                    else "%d 秒内失败 %d 次" % (AUTONOMOUS_TRIP_WINDOW, len(self._fails))))
-            print("[soul-skill] ⚠️  %s" % self.status["suspended_reason"], file=sys.stderr)
+            print("[soulviai] ⚠️  %s" % self.status["suspended_reason"], file=sys.stderr)
             return
 
     def stop(self):
@@ -860,17 +1043,17 @@ def cmd_serve(args):
             _BackendWatchdog(status).start()
             return True
         except Exception as exc:
-            print("[soul-skill] 自主思考引擎启动失败: %s" % exc, file=sys.stderr)
+            print("[soulviai] 自主思考引擎启动失败: %s" % exc, file=sys.stderr)
             return False
 
     start_autonomous()
 
-    print("[soul-skill] 常驻服务已就绪 http://%s:%d  (project=%s, user=%s, autonomous=%s, "
+    print("[soulviai] 常驻服务已就绪 http://%s:%d  (project=%s, user=%s, autonomous=%s, "
           "auth=token@%s)" % (args.host, args.port, project, args.user,
                               status["autonomous"], token_path), file=sys.stderr)
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "soul-skill/" + ("1.0")
+        server_version = "soulviai/" + ("1.0")
 
         def log_message(self, fmt, *a):  # 降噪，交给 stderr → 日志文件
             pass
@@ -883,7 +1066,7 @@ def cmd_serve(args):
         def _deny(self):
             """鉴权失败。故意回 401 而非 404——让调用方能区分
             「端口被别的程序占了」和「是我们的服务但 token 不对」。"""
-            return self._send({"ok": False, "service": "soul-skill",
+            return self._send({"ok": False, "service": "soulviai",
                                "error": "unauthorized", "auth_required": True,
                                "hint": "带上 %s 头，或 Authorization: Bearer <token>；"
                                        "token 由启动时生成，落在项目目录下的 %s（0600）"
@@ -915,14 +1098,14 @@ def cmd_serve(args):
             # /health 无 token 也回，但只回「我是谁、要鉴权」；
             # 项目路径 / pid / 沉默原因这些不泄露给同机器的其他用户。
             if parsed.path == "/health" and not auth_ok:
-                return self._send({"ok": True, "service": "soul-skill",
+                return self._send({"ok": True, "service": "soulviai",
                                    "auth_required": True})
             if not auth_ok:
                 return self._deny()
             try:
                 if parsed.path == "/health":
                     return self._send({
-                        "ok": True, "service": "soul-skill", "pid": os.getpid(),
+                        "ok": True, "service": "soulviai", "pid": os.getpid(),
                         "project": project, "uptime_seconds": int(time.time() - started_at),
                         "autonomous": status["autonomous"],
                         "suspended_reason": status["suspended_reason"],
@@ -934,6 +1117,21 @@ def cmd_serve(args):
                     payload["ok"] = True
                     payload["command"] = "state"
                     payload["source"] = "daemon"
+                    return self._send(payload)
+                if parsed.path == "/env":
+                    try:
+                        from engine.social import env_source
+                        if query.get("refresh") in ("1", "true", "yes"):
+                            env_source.apply(env_source.refresh(), force=True)
+                        else:
+                            env_source.ensure()
+                        payload = {"ok": True, "command": "env",
+                                   "source": "daemon"}
+                        payload.update(env_source.status())
+                        payload["text"] = env_source.text()
+                    except Exception as exc:
+                        payload = {"ok": False, "command": "env",
+                                   "error": str(exc)}
                     return self._send(payload)
                 if parsed.path == "/pending":
                     from core import database as db
@@ -1094,6 +1292,12 @@ def build_parser():
     i.add_argument("--warmup", action="store_true")
     i.set_defaults(func=cmd_init)
 
+    ck = sub.add_parser("check",
+                        help="深度自检：断言各子系统真的产生了副作用（假模型，不花额度）")
+    ck.add_argument("--user", default="default_user")
+    ck.add_argument("--fake-reply", help="替换模型的固定回复（默认内置一句）")
+    ck.set_defaults(func=cmd_check)
+
     c = sub.add_parser("chat")
     c.add_argument("--user", default="default_user")
     c.add_argument("--text", required=True)
@@ -1106,10 +1310,18 @@ def build_parser():
     c.add_argument("--fake-reply", help="仅自检用：把模型后端替换成固定回复")
     c.set_defaults(func=cmd_chat)
 
+    cf = sub.add_parser("config")
+    cf.set_defaults(func=cmd_config)
+
     s = sub.add_parser("state")
     s.add_argument("--user", default="default_user")
     s.add_argument("--raw", action="store_true")
     s.set_defaults(func=cmd_state)
+
+    ev = sub.add_parser("env")
+    ev.add_argument("--user", default="default_user")
+    ev.add_argument("--refresh", action="store_true")
+    ev.set_defaults(func=cmd_env)
 
     pd = sub.add_parser("pending")
     pd.add_argument("--user", default="default_user")
@@ -1140,7 +1352,7 @@ def build_parser():
     v.add_argument("--allow-remote", action="store_true",
                    help="允许监听非回环地址（token 走明文 HTTP，建议再套 HTTPS 反代）")
     v.add_argument("--token-file", default=None,
-                   help="鉴权 token 文件位置（默认 <项目>/.soul-daemon.token）")
+                   help="鉴权 token 文件位置（默认 <项目>/.soulviai-daemon.token）")
     v.set_defaults(func=cmd_serve)
 
     return p

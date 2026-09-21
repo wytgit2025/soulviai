@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """24维全真流动心智内核层（非线性升级 + 耦合矩阵 + 免疫回归）
 新增：延迟发酵队列、叠加爆发、sigmoid非线性、个性化敏感度画像、

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """自我进化引擎 — Evolution Engine
 ========================================
@@ -14,12 +14,14 @@
   - 不破坏现有24维心智内核，只作为扩展层
 """
 from __future__ import annotations
+import os
 import random
 import math
 import json
 from datetime import datetime
 from core import database as db
 from core import config as cfg
+from core.logging_utils import log_error
 from engine import experience as experience_module
 
 # ══════════════════════════════════════════════════════════════════════
@@ -68,9 +70,12 @@ def compute_experience_growth(user_id: str) -> dict:
     如果当天没有事件，返回微量自然沉淀。
     """
     if not _EVOLUTION_CONFIG["enabled"]:
-        # 回退到微量时间增量
-        from engine import growth as growth_module
-        growth_module.advance_years(user_id)
+        # 回退到微量时间增量。这里**不能**再调 growth.advance_years() ——
+        # advance_years 反过来又会调本函数（growth.py:592），关掉 evolution 就是
+        # 无限递归；被 advance_years 外层的 except 兜住之后，表现是「成长悄无声息
+        # 地停了」，比直接报错难查得多。
+        # 返回这个不足 3 项的字典就够了：advance_years 判 len>2 才走经历驱动，
+        # 否则它自己会落到纯时间驱动那段（growth.py:633 起）。
         return {"years_precipitation": 0.002, "healing_reflection": 0.001}
 
     # 从经历日志汇总当日增量和权重
@@ -524,33 +529,49 @@ _sealed_dimensions: Dict[str, Dict[str, float]] = {}
 _milestones_achieved: Dict[str, set] = {}
 
 
+# 封印文件是否读取失败。读失败时绝不能把内存里的空值写回去 —— 那等于一次 JSON
+# 解析错误就抹掉全部封印与里程碑。
+_seals_load_failed = False
+
+
 def _load_seals_from_disk():
     """从 JSON 文件加载不可逆封印数据"""
-    global _sealed_dimensions, _milestones_achieved
+    global _sealed_dimensions, _milestones_achieved, _seals_load_failed
     _sealed_dimensions = {}
     _milestones_achieved = {}
+    _seals_load_failed = False
+    path = "data/json/irreversible_seals.json"
     try:
-        import json, os
-        if os.path.exists("data/json/irreversible_seals.json"):
-            with open("data/json/irreversible_seals.json", "r") as f:
-                data = json.load(f)
-                _sealed_dimensions = data.get("seals", {})
-                _milestones_achieved = {k: set(v) for k, v in data.get("milestones", {}).items()}
-    except Exception:
-        pass
+        if not os.path.exists(path):
+            return          # 首次运行还没有这个文件是正常的，此时允许后续写入
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        _sealed_dimensions = data.get("seals") or {}
+        _milestones_achieved = {k: set(v)
+                                for k, v in (data.get("milestones") or {}).items()}
+    except Exception as e:
+        # 文件在、但读不出来（被截断 / 权限 / 磁盘故障）：标记失败，禁止写回。
+        # 原先这里只是 pass，而 apply_irreversible_seals 结尾会**无条件**
+        # _save_seals() —— 于是「文件坏了」直接升级成「封印和里程碑全没了」。
+        # growth._record_milestone 是同样的取舍（读失败就 return，不让空列表覆盖），
+        # 这里跟它对齐。
+        _seals_load_failed = True
+        log_error("life.evolution.seals_unreadable", str(e), exc_info=True)
 
 
 def _save_seals():
+    """落盘封印与里程碑。读失败的那一轮拒绝写，免得用空值覆盖掉好文件。"""
+    if _seals_load_failed:
+        return
     try:
-        import json
         data = {
             "seals": _sealed_dimensions,
             "milestones": {k: list(v) for k, v in _milestones_achieved.items()},
         }
-        with open("data/json/irreversible_seals.json", "w") as f:
+        with open("data/json/irreversible_seals.json", "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        log_error("life.evolution.seals_save_failed", str(e), exc_info=True)
 
 
 def apply_irreversible_seals(user_id: str):

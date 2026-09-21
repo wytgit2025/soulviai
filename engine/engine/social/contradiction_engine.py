@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """九重矛盾博弈内核 v3 — 9 独立思维 + 结构化输出 + 自我历史
 ==========================================================

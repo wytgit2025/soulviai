@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """自主思考引擎 —— 情绪深度绑定版
 =====================================
@@ -755,7 +755,18 @@ def _check_search_thought(user_id: str, life_vitality: float,
         except Exception:
             pass
 
-    topic = random.choice(topics[:6])  # 最多6个候选
+    # 心里还没弄明白的事优先 —— 让好奇真的变成一次搜索（curiosity → 搜索 → 分享）
+    curiosity_module = None
+    pending_query = ""
+    try:
+        from engine import curiosity as curiosity_module
+        pending_query = curiosity_module.get_search_curiosity(user_id) or ""
+        if pending_query:
+            topics.insert(0, pending_query)
+    except Exception:
+        curiosity_module, pending_query = None, ""
+
+    topic = pending_query or random.choice(topics[:6])  # 最多6个候选
 
     try:
         from engine import search as search_module
@@ -768,6 +779,13 @@ def _check_search_thought(user_id: str, life_vitality: float,
 
     # 记录搜索时间
     setattr(_check_search_thought, last_search_key, now_ts)
+
+    # 搜到了就算弄明白过一次，别反复好奇同一件事
+    if pending_query and curiosity_module is not None:
+        try:
+            curiosity_module.mark_explored(user_id, pending_query)
+        except Exception:
+            pass
 
     # LLM将搜索结果转化为自然的分享
     profile_text = ""

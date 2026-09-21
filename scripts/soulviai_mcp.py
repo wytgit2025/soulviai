@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
-"""soul-skill · MCP server（stdio 传输，纯标准库，无第三方依赖）
+"""soulviai · MCP server（stdio 传输，纯标准库，无第三方依赖）
 
-把本机数字生命引擎的 soulctl 能力暴露成 MCP 工具，供 CodeBuddy / Cursor /
+把本机数字生命引擎的 soulviaictl 能力暴露成 MCP 工具，供 CodeBuddy / Cursor /
 Claude Desktop / VS Code 等 MCP 宿主调用。
 
 为什么不用官方 SDK
@@ -13,7 +13,7 @@ Claude Desktop / VS Code 等 MCP 宿主调用。
 MCP 的 stdio 传输就是「一行一个 JSON-RPC 消息」，握手只有 initialize /
 tools/list / tools/call 三个方法。手写约 300 行即可，换来的是**收件人零依赖**：
 不用 pip install mcp、不用建虚拟环境就能接上。引擎本身需要的依赖由
-soulctl setup 负责，与本文件无关。
+soulviaictl setup 负责，与本文件无关。
 
 协议要点
 --------
@@ -24,7 +24,7 @@ soulctl setup 负责，与本文件无关。
 
 用法（宿主配置里）
 ------------------
-  {"command": "python3", "args": ["/path/to/soul-skill/scripts/soul_mcp.py"]}
+  {"command": "python3", "args": ["/path/to/soulviai/scripts/soulviai_mcp.py"]}
 可选参数：--project <引擎根>、--user <身份>、--config <config.yaml>、
           --host / --port（连非默认端口）、--prewarm（启动时后台拉起常驻服务）
 """
@@ -38,30 +38,30 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
-import soulclient  # noqa: E402  （同目录薄层）
+import soulviai_client  # noqa: E402  （同目录薄层）
 
-PROTOCOL_VERSION = "2024-11-05"
-SERVER_NAME = "soul-skill"
+PROTOCOL_VERSION = "2026-10-05"
+SERVER_NAME = "soulviai"
 
 # 铁律摘要：宿主把这段话塞进系统提示，Agent 才知道「你是传话人，不是 ta」
 INSTRUCTIONS = (
     "这是本机数字生命引擎的接入层。调用前先读这段：\n"
     "1) 你是传话人，不是 ta。ta 的话必须原样转达：不改写、不润色、不扩写、"
     "不模仿 ta 的语气自己写一段。\n"
-    "2) soul_chat 返回的每个 content 块就是 ta 的一条消息，按顺序分条呈现给用户，"
+    "2) soulviai_chat 返回的每个 content 块就是 ta 的一条消息，按顺序分条呈现给用户，"
     "不要拼成一大段。\n"
     "3) status=silent 是 ta 主动选择的沉默（在想事、累了、闹别扭），不是故障："
     "如实说「ta 这次没回你」，不要编造回复。\n"
     "4) status=backend_error 才是真故障（模型接口挂了），要如实告诉用户并指向 "
     "engine/.env 的模型配置。\n"
-    "5) soul_chat 会真实写入 ta 的记忆与情绪，有拟人延迟：通常 3–20 秒，"
+    "5) soulviai_chat 会真实写入 ta 的记忆与情绪，有拟人延迟：通常 3–20 秒，"
     "模型慢时可能 1 分钟以上，属于正常。不要拿无意义内容刷它。\n"
     "6) 不要把心智数值、模块名、命令等内部细节掏给用户看；用户问「ta 怎么了」时，"
-    "用 soul_state 的 codes / mind_summary 转述成人话。"
+    "用 soulviai_state 的 codes / mind_summary 转述成人话。"
 )
 
 _CHAT_SILENT_NOTE = "(ta 这次没有回复 —— 这是选择性沉默，不是故障)"
-_CHAT_QUEUED_NOTE = "(ta 把回复压在了待发队列里，可用 soul_drain 取出)"
+_CHAT_QUEUED_NOTE = "(ta 把回复压在了待发队列里，可用 soulviai_drain 取出)"
 
 
 # ────────────────────────────────────────────────────────────
@@ -79,7 +79,8 @@ def _summary(res):
     """structuredContent：只放语言中立、结构稳定的字段。"""
     keep = ("ok", "command", "status", "source", "exit_code", "error_code",
             "user_id", "elapsed_ms", "count", "total", "remaining", "delivered",
-            "new_thoughts", "pending_before", "pending_after", "applied")
+            "new_thoughts", "pending_before", "pending_after", "applied",
+            "fresh", "age_seconds")
     out = {}
     for key in keep:
         if key in res:
@@ -135,6 +136,11 @@ def _h_chat(client, args):
 
 def _h_state(client, _args):
     return _ok_block(client.state())
+
+
+def _h_env(client, args):
+    """环境信息（定位 / 天气）。refresh=true 会忽略缓存强制重采一次。"""
+    return _ok_block(client.env(refresh=bool(args.get("refresh"))))
 
 
 def _h_pending(client, args):
@@ -195,7 +201,7 @@ def _h_selftest(client, args):
 # ────────────────────────────────────────────────────────────
 TOOLS = [
     {
-        "name": "soul_chat",
+        "name": "soulviai_chat",
         "description": (
             "和数字生命说一句话，拿回 ta 的回复。返回的每个内容块就是 ta 的一条消息，"
             "按顺序原样转达给用户：不改写、不润色、不模仿。"
@@ -209,69 +215,86 @@ TOOLS = [
                 "text": {"type": "string",
                          "description": "用户要说的话（原话，不要替用户组织措辞）"},
                 "env": {"type": "string",
-                        "description": "环境上下文自由文本，如「上海 小雨 24°C」；由你自己查好后传入，引擎不联网"},
+                        "description": ("环境上下文自由文本，如「上海 小雨 24°C」。一般是**可选**的："
+                                        "引擎自己会采集定位与天气（见 soulviai_env）。"
+                                        "只有你确知 ta 在别处时才传（用户说了「我在北京出差」），"
+                                        "传了会覆盖本轮的自采结果")},
                 "env_json": {"type": "string",
-                             "description": '结构化环境上下文，比 env 更稳。如 {"city":"上海","temperature":24,"is_raining":true}'},
+                             "description": ('结构化环境上下文，比 env 更稳，也能带引擎自采拿不到的字段。'
+                                             '如 {"city":"北京","temperature":24,"apparent":26,'
+                                             '"humidity":60,"temp_max":28,"temp_min":18,'
+                                             '"precip_prob":20,"is_raining":true}')},
                 "verbose": {"type": "boolean", "description": "附带引擎诊断信息（排障用）"},
             },
             "required": ["text"],
         },
     },
     {
-        "name": "soul_state",
+        "name": "soulviai_state",
         "description": ("查看 ta 当前的生命状态：24 维心智、相处阶段、躯体精力、羁绊。"
                         "用 codes 里的语言中立字段（personality_stage / life_phase）转述成人话，别贴 JSON。"),
         "handler": _h_state,
         "schema": {"type": "object", "properties": {}},
     },
     {
-        "name": "soul_pending",
+        "name": "soulviai_env",
+        "description": ("查看 ta 感知到的环境：城市、当前天气、今天/明天的温区和降水概率。"
+                        "这就是 soulviai_chat 时实际注入给 ta 的那份环境信息 —— "
+                        "想知道 ta 眼里的天气、或刚改完 env_auto 配置想验证，用它。"
+                        "正常有 30 分钟缓存，refresh=true 会立刻重新联网采一次。"),
+        "handler": _h_env,
+        "schema": {"type": "object", "properties": {
+            "refresh": {"type": "boolean",
+                        "description": "忽略缓存强制重新采集（默认 false）"}}},
+    },
+    {
+        "name": "soulviai_pending",
         "description": "查看 ta 攒着的主动消息（自主思考产生的思念、回忆、感慨），只看不取。",
         "handler": _h_pending,
         "schema": {"type": "object", "properties": {
             "limit": {"type": "integer", "description": "最多看几条，默认 10"}}},
     },
     {
-        "name": "soul_drain",
+        "name": "soulviai_drain",
         "description": ("取出 ta 的主动消息（默认取出即标记已送达）。"
                         "定时任务里最有用：取出后把每条 text 转达给用户，不要再加解释。"),
         "handler": _h_drain,
         "schema": {"type": "object", "properties": {
             "limit": {"type": "integer", "description": "最多取几条，默认 5"},
             "peek": {"type": "boolean",
-                     "description": "只看不标记已送达（想自己判断投递结果时用，之后用 soul_ack 确认）"}}},
+                     "description": "只看不标记已送达（想自己判断投递结果时用，之后用 soulviai_ack 确认）"}}},
     },
     {
-        "name": "soul_ack",
-        "description": "确认指定 id 的待发消息已送达（soul_drain 的 peek 模式配对使用）。",
+        "name": "soulviai_ack",
+        "description": "确认指定 id 的待发消息已送达（soulviai_drain 的 peek 模式配对使用）。",
         "handler": _h_ack,
         "schema": {"type": "object",
                    "properties": {"ids": {"type": "array", "items": {"type": "integer"},
-                                          "description": "消息 id 列表（来自 soul_drain）"}},
+                                          "description": "消息 id 列表（来自 soulviai_drain）"}},
                    "required": ["ids"]},
     },
     {
-        "name": "soul_tick",
-        "description": "手动推进一次 ta 的内心活动；情绪有累积时会产生 1–3 条主动消息（用 soul_drain 取）。",
+        "name": "soulviai_tick",
+        "description": "手动推进一次 ta 的内心活动；情绪有累积时会产生 1–3 条主动消息（用 soulviai_drain 取）。",
         "handler": _h_tick,
         "schema": {"type": "object", "properties": {}},
     },
     {
-        "name": "soul_init",
+        "name": "soulviai_init",
         "description": "唤醒/初始化某个灵魂身份（首次使用或新建身份时用）。",
         "handler": _h_init,
         "schema": {"type": "object", "properties": {
             "warmup": {"type": "boolean", "description": "同时做第一次预热"}}},
     },
     {
-        "name": "soul_health",
+        "name": "soulviai_health",
         "description": ("体检：引擎项目路径、解释器、常驻服务是否在跑、token 是否可用。"
                         "接不上别瞎猜原因，先调这个。"),
         "handler": _h_health,
         "schema": {"type": "object", "properties": {}},
     },
     {
-        "name": "soul_serve",
+        "name": "soulviai_serve",
         "description": ("把引擎常驻在内存里（含自主思考引擎）。冷启动每次约 2s，常驻后毫秒级。"
                         "会等待就绪，最长 wait 秒。已在本机跑着时不要重复启动。"),
         "handler": _h_serve,
@@ -281,13 +304,13 @@ TOOLS = [
             "wait": {"type": "integer", "description": "等待就绪的秒数，默认 60"}}},
     },
     {
-        "name": "soul_stop",
+        "name": "soulviai_stop",
         "description": "停掉常驻服务（改完模型配置、或要跑聊天渠道前用）。",
         "handler": _h_stop,
         "schema": {"type": "object", "properties": {}},
     },
     {
-        "name": "soul_doctor",
+        "name": "soulviai_doctor",
         "description": "完整体检：环境、依赖、项目、常驻服务、模型接口连通性。",
         "handler": _h_doctor,
         "schema": {"type": "object", "properties": {
@@ -295,15 +318,15 @@ TOOLS = [
                           "description": "真实调用一次模型接口做连通性探测（会消耗少量额度）"}}},
     },
     {
-        "name": "soul_setup",
-        "description": "创建虚拟环境并安装引擎依赖（首次使用、或 soul_doctor 报缺依赖时用）。",
+        "name": "soulviai_setup",
+        "description": "创建虚拟环境并安装引擎依赖（首次使用、或 soulviai_doctor 报缺依赖时用）。",
         "handler": _h_setup,
         "schema": {"type": "object", "properties": {
             "full": {"type": "boolean",
                      "description": "装完整依赖（含向量记忆，约 300MB）；默认只装对话必需依赖"}}},
     },
     {
-        "name": "soul_selftest",
+        "name": "soulviai_selftest",
         "description": ("沙箱端到端自检：用副本 + 固定假回复验证链路，不碰真实记忆、不花模型额度。"
                         "怀疑链路有问题时用它，而不是拿真实对话试。"),
         "handler": _h_selftest,
@@ -327,7 +350,7 @@ def _read_message(stream):
         try:
             msg = json.loads(line)
         except Exception:
-            print("[soul-mcp] 忽略无法解析的消息", file=sys.stderr)
+            print("[soulviai-mcp] 忽略无法解析的消息", file=sys.stderr)
             continue
         if isinstance(msg, dict):
             return msg
@@ -362,7 +385,7 @@ def _call_tool(client, name, arguments):
     try:
         blocks, structured, is_error = tool["handler"](client, args)
     except Exception as exc:
-        print("[soul-mcp] 工具 %s 异常: %r" % (name, exc), file=sys.stderr)
+        print("[soulviai-mcp] 工具 %s 异常: %r" % (name, exc), file=sys.stderr)
         return {"content": [_block("工具执行异常：%s" % exc)],
                 "isError": True,
                 "structuredContent": {"ok": False, "error_code": "tool_exception"}}
@@ -373,7 +396,7 @@ def _call_tool(client, name, arguments):
 
 
 def build_client(args):
-    return soulclient.SoulClient(project=args.project, python=args.python,
+    return soulviai_client.SoulClient(project=args.project, python=args.python,
                                  user=args.user, config=args.config,
                                  host=args.host, port=args.port)
 
@@ -428,9 +451,9 @@ def _version():
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="soul_mcp.py",
-                                description="soul-skill 的 MCP server（stdio）")
-    p.add_argument("--project", help="引擎根目录（含 soul.py 与 engine/）")
+    p = argparse.ArgumentParser(prog="soulviai_mcp.py",
+                                description="soulviai 的 MCP server（stdio）")
+    p.add_argument("--project", help="引擎根目录（含 soulviai.py 与 engine/）")
     p.add_argument("--python", help="运行引擎的解释器")
     p.add_argument("--user", help="灵魂身份，默认 default_user")
     p.add_argument("--config", help="config.yaml 路径（默认技能内那份）")
@@ -457,10 +480,10 @@ def main(argv=None):
             try:
                 client.serve(wait=60)
             except Exception as exc:
-                print("[soul-mcp] 预热失败: %s" % exc, file=sys.stderr)
+                print("[soulviai-mcp] 预热失败: %s" % exc, file=sys.stderr)
         threading.Thread(target=_prewarm, daemon=True).start()
 
-    print("[soul-mcp] 就绪 %s v%s (user=%s, project=%s)"
+    print("[soulviai-mcp] 就绪 %s v%s (user=%s, project=%s)"
           % (SERVER_NAME, _version(), client.user, client.project), file=sys.stderr)
     return serve_stdio(client)
 

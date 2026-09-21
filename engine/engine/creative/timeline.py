@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """时间线感知引擎（融合 Chronos 精准时钟 + Sensors 天气感知）
 让AI拥有完整的时间认知：星期、日期、季节、时段、节律、天气。

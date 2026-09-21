@@ -1,5 +1,5 @@
 @echo off
-rem soul-skill · 独立运行版启动壳（Windows）
+rem soulviai · 独立运行版启动壳（Windows）
 rem
 rem   run.cmd                    进入终端对话
 rem   run.cmd web                在浏览器里对话
@@ -12,7 +12,7 @@ rem 首次运行会自动建 engine\.venv 并装对话必需依赖（约 42MB，
 setlocal
 
 set "HERE=%~dp0"
-set "CTL=%HERE%scripts\soulctl.py"
+set "CTL=%HERE%scripts\soulviaictl.py"
 set "VENV_PY=%HERE%engine\.venv\Scripts\python.exe"
 
 set "PY="

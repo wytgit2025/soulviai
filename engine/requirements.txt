@@ -1,6 +1,6 @@
-# soul-skill · 核心依赖（对话 / 状态 / 待发队列必需）
+# soulviai · 核心依赖（对话 / 状态 / 待发队列必需）
 #
-# 安装：python3 scripts/soulctl.py setup --minimal
+# 安装：python3 scripts/soulviaictl.py setup --minimal
 #   （此命令装的正是下面这几项，无需手动 pip）
 #
 # 语义向量记忆（fastembed / onnxruntime / numpy，约 300MB）见
@@ -11,6 +11,3 @@ httpx>=0.27.0
 requests>=2.30.0
 python-dotenv>=1.0.0
 websocket-client>=1.6.0
-
-# ── 可选：多平台 Bot（按需自行安装）──
-# discord.py>=2.3.0           # Discord Bot

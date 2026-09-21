@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """17条 soulviai 核心原则（底层宪法·不可突破）
 全局行为约束校验器，强制全域生效
@@ -15,7 +15,7 @@ from core import database as db
 
 
 # 以下标记表示当前回复来自
-# 调用方(soul.py)在调用validate_behavior时可传入l8_context
+# 调用方(soulviai.py)在调用validate_behavior时可传入l8_context
 _EXEMPTIONS = {
     "perceived_consistency",   # ——原则7豁免
     "social_anxiety",          # ——原则5豁免

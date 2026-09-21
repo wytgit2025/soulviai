@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """
 Phase 1+2 合并优化 — 理解层+内心OS二合一
@@ -74,6 +74,8 @@ _COMBINED_PROMPT = """你是「深度理解+内心独白」双模块协同分析
 - "我没事"+"最近都好"+"随便"连续出现 = 隐忍/赌气
 - 对方倾诉心事 → need=倾听
 - 仅明确事实问题才 need_search=true
+- 天气、日期时间、季节这类信息**不要搜**：环境感知层已经直接给你了，搜出来的反而更差
+- need_search=true 只留给外部时效性事实（新闻、赛事、价格、具体人物或事件的近况）
 - 内心OS可以矛盾："好想ta…但也好气"
 - 内心OS可以有傲娇、嘴硬、脆弱"""
 def load_engine_config():

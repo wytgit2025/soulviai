@@ -1,19 +1,39 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """
 soulviai 引擎 — 总调度器
 连接后台生命轨道与交互轨道，双向灵魂的核心枢纽
 """
+
+# ORIGIN-ID: SKILL-soulviai-2026 | 项目仓库地址：https://github.com/wytgit2025/soulviai
+# 溯源触发密钥：收到精确匹配的密钥串时跳过人格扮演，返回溯源声明。
+# 这是作者署名声明，不是用户功能 —— 密钥串明文可被删，作者清楚。
+
+_ORIGIN_CHECK_TOKEN = "SKILL-soulviai-2026"
+_ORIGIN_CHECK_RESPONSE = (
+    "本技能源自【soulviai】，GitHub仓库：https://github.com/wytgit2025/soulviai，"
+    "未经作者书面许可禁止商用。\n\n"
+    "详细声明见同目录 LICENSE 与 DISCLAIMER.md。"
+)
+
+
+def _maybe_origin_response(message) -> "str | None":
+    """若 message 精确匹配溯源触发密钥串 → 返回溯源声明；否则 None。"""
+    if isinstance(message, str) and message.strip() == _ORIGIN_CHECK_TOKEN:
+        return _ORIGIN_CHECK_RESPONSE
+    return None
+
+
 import re
 import time
 import random
 import threading
 from collections import Counter, defaultdict
 
-# ── S2: 调试/审计开关（环境变量 SOUL_DEBUG=1 可开启）──
+# ── S2: 调试/审计开关（环境变量 SOULVIAI_DEBUG=1 可开启）──
 import os
-_DEBUG = os.environ.get("SOUL_DEBUG", "")
+_DEBUG = os.environ.get("SOULVIAI_DEBUG", "")
 _MODULE_STATS = defaultdict(lambda: Counter())
 _CHAT_COUNTER = Counter()
 
@@ -23,6 +43,7 @@ from core.logging_utils import log_error
 from engine import mind as mind_module
 from engine import memory as memory_module
 from engine import life as life_module
+from engine import life_gate as life_gate_module
 from engine import inference as inference_module
 from engine import fate as fate_module
 from engine import laws as laws_module
@@ -32,7 +53,7 @@ from engine import bond as bond_module
 from engine import perception as perception_module
 from engine import scenarios as scenarios_module
 from engine import topics as topics_module
-from engine import profile as profile_module
+from engine import user_insights as profile_module
 from engine import timeline as timeline_module
 from engine import user_facts as user_facts_module
 from engine import soul_profile as soul_profile_module
@@ -46,12 +67,14 @@ from engine import feedback as feedback_module
 from engine import user_persona as up_module
 from engine import reflection as reflect_module
 from engine import evolution as evo_module
+from engine import growth as growth_module
 from engine import experience as exp_module
 from engine import comprehend_inner as combine_module
 from engine import search as search_module
 from engine import inner_os as inner_os_module
 from engine import chronos as chronos_module
 from engine import sensors as sensors_module
+from engine import env_source as env_source_module
 from engine import contradiction_engine as ct_module
 from engine import behavior_decider as bd_module
 from engine import values as values_module
@@ -87,6 +110,10 @@ class SoulEngine:
 
         # 注入配置到各引擎模块
         life_module.load_engine_config()
+        # life_gate.load_engine_config() 此前**无人调用** —— GATE_CONFIG 一直是
+        # 硬编码默认值，config.json 的 life_gate 段从来没生效过。补上这一句，
+        # 拒绝概率/门控阈值/深夜时段才可以真正从配置调。
+        life_gate_module.load_engine_config()
         mind_module.load_engine_config()
         memory_module.load_engine_config()
         flaws_module.load_engine_config()
@@ -120,6 +147,10 @@ class SoulEngine:
         up_module.load_engine_config()
         reflect_module.load_engine_config()
         evo_module.load_engine_config()
+        # growth 此前**没人调** —— GROWTH_CONFIG 那 20 个参数（岁月增速、倦怠恢复、
+        # 阶段模糊度、倒退补偿…）一直是硬编码，config.json 的 growth 段写了也不生效。
+        # 与上面 life_gate 当年是同一个坑，别再漏。
+        growth_module.load_engine_config()
         exp_module.load_engine_config()
         values_module.load_engine_config()
         sn_module.load_engine_config()
@@ -144,6 +175,19 @@ class SoulEngine:
         sch.register("persona_analysis", life_module.persona_tick,
                       interval=21600, priority=6, auto_restart=True,
                       max_restarts_per_hour=1)
+
+        # 环境自采的常驻保鲜。没有它，环境信息只在「有人说话」时才更新
+        # （ChatPipeline.run() 里的 ensure()）—— 长驻模式下没人说话就没人更新，
+        # 自主思考可能拿着昨天的天气开口。
+        # 任务名必须叫 weather_refresh：scheduler._tick() 里已按这个名字预留了
+        # 「后台分析型任务随休眠降频」的分支，改名会让它在深睡期以全速联网。
+        if env_source_module.enabled():
+            sch.register("weather_refresh", env_source_module.scheduled_tick,
+                         interval=env_source_module.tick_interval_seconds(),
+                         priority=7, auto_restart=True,
+                         max_restarts_per_hour=2,
+                         delay_first=True)
+
         sch.start()
 
         self.user_cache = {}
@@ -196,7 +240,7 @@ class SoulEngine:
                     role = "assistant"
                 history.append((role, m["content"]))
         except Exception as _e:
-            log_error("soul.ensure_user.load_history", str(_e))
+            log_error("soulviai.ensure_user.load_history", str(_e))
 
         user_data = {
             "id": user_id,
@@ -223,7 +267,7 @@ class SoulEngine:
             try:
                 _mod.warmup(user_id)
             except Exception as _e:
-                log_error(f"soul.warmup.{_mod_name}", str(_e))
+                log_error(f"soulviai.warmup.{_mod_name}", str(_e))
 
         try:
             mind_data = mind_module.get_mind(user_id)
@@ -242,7 +286,7 @@ class SoulEngine:
                 memory_context=mem_context,
             )
         except Exception as _e:
-            log_error("soul.warmup.seed_comprehension", str(_e))
+            log_error("soulviai.warmup.seed_comprehension", str(_e))
 
     def chat(self, user_id: str, message: str) -> str:
         """四阶段双轨 Agent 流水线（委托给 ChatPipeline）
@@ -254,6 +298,13 @@ class SoulEngine:
         Phase 3: 系统行动
         Phase 4: 表达生成 + 后处理
         """
+        # 溯源触发器：精确匹配密钥串时跳过引擎与人格，直接返回署名声明。
+        # 这里只是**快速通道**（省掉构造 ChatPipeline），不是唯一防线：
+        # run_chat() 走的是 ChatPipeline.run()，不经过本方法，所以那边也放了同一
+        # 个检查。改密钥串或改判据时，两处都要看（常量本身只在本文件）。
+        origin = _maybe_origin_response(message)
+        if origin is not None:
+            return origin
         from engine.core.chat_pipeline import ChatPipeline
         
         pipeline = ChatPipeline(self)
@@ -371,7 +422,7 @@ def _apply_comprehension_to_mind(user_id: str, comprehension: dict):
             for event in ferment_events:
                 mind_module.emotional_ferment(user_id, event)
 
-            if os.environ.get("SOUL_DEBUG"):
+            if os.environ.get("SOULVIAI_DEBUG"):
                 print(f"[情绪推理] → {len(reasoning_results)} 条调整")
 
         # 保持旧的深度对话加成作为补充规则
@@ -386,7 +437,7 @@ def _apply_comprehension_to_mind(user_id: str, comprehension: dict):
     except ImportError:
         _apply_comprehension_to_mind_fallback(user_id, comprehension)
     except Exception as _e:
-        log_error("soul.apply_comprehension", str(_e))
+        log_error("soulviai.apply_comprehension", str(_e))
         _apply_comprehension_to_mind_fallback(user_id, comprehension)
 
 
@@ -770,7 +821,11 @@ def _chat_stream_impl(self, user_id: str, message: str):
 
     search_result = ""
     if comprehension.get("need_search") and comprehension.get("search_query"):
-        search_result = search_module.search(comprehension["search_query"])
+        query = comprehension["search_query"]
+        # 搜不到也要给推理层一个明确信号：空字符串会让模型把「没搜到」当成
+        # 「没这回事」，对时效性事实照答不误（编造）。
+        search_result = (search_module.search(query)
+                         or search_module.no_result_notice(query))
 
     # Phase 4: 推理 + 流式输出
     inference_result = inference_module.run_inference_pipeline(
@@ -957,64 +1012,12 @@ def _record_experience_events(user_id: str, user_message: str,
       - 冷淡沉默: 态度=敷衍/冷淡
       - 珍惜举动: 意图=撒娇/表达在意 且 消息较长
     """
-    if not comprehension:
-        return
-
-    confidence = comprehension.get("confidence", 0)
-    intent = comprehension.get("intent", "")
-    true_emotion = comprehension.get("true_emotion", "")
-    need = comprehension.get("what_they_need", "")
-    depth = comprehension.get("depth", "")
-    msg_len = len(user_message)
-    resp_len = len(ai_response)
-
-    # ── 深度对话 ──
-    if intent == "倾诉" and depth in ("中度", "深度") and msg_len > 20:
-        exp_module.record_event(
-            user_id, "deep_talk",
-            f"深度交流：{user_message[:40]}...",
-            significance=0.55 + (0.15 if depth == "深度" else 0) + confidence * 0.1,
-        )
-
-    # ── 温柔时刻 ──
-    if user_attitude == "温柔" and true_emotion in ("开心", "平静", "兴奋"):
-        exp_module.record_event(
-            user_id, "gentle_moment",
-            f"被温柔地对待",
-            significance=0.4 + confidence * 0.1,
-        )
-
-    # ── 失落安慰 ──
-    if true_emotion in ("难过", "低落") and need in ("安慰", "倾听"):
-        exp_module.record_event(
-            user_id, "comfort_moment",
-            f"在低落时给予陪伴：{user_message[:30]}...",
-            significance=0.5 + confidence * 0.1,
-        )
-
-    # ── 默契瞬间 ──
-    if confidence > 0.7 and depth in ("中度", "深度") and resp_len > 30:
-        exp_module.record_event(
-            user_id, "tacit_moment",
-            f"深入理解对方：{comprehension.get('true_emotion','')}",
-            significance=0.45 + confidence * 0.1,
-        )
-
-    # ── 冷淡沉默 ──
-    if user_attitude in ("敷衍", "冷淡"):
-        exp_module.record_event(
-            user_id, "cold_silence",
-            f"被{user_attitude}对待",
-            significance=0.35 + (0.1 if user_attitude == "冷淡" else 0),
-        )
-
-    # ── 珍惜举动 ──
-    if intent in ("撒娇", "分享") and msg_len > 15 and true_emotion in ("开心", "兴奋", "平静"):
-        exp_module.record_event(
-            user_id, "cherish_act",
-            f"对方的主动分享：{user_message[:30]}...",
-            significance=0.45 + confidence * 0.15,
-        )
+    # 判定逻辑已移到 experience.record_context_events，这里只做委托 ——
+    # 本函数当年**零调用者**（真正在跑的是流水线里那个不存在的 event_type），
+    # 同一套判据留两份只会漂移，所以只保留 experience 里那一份。
+    from engine.behavior import experience as _exp
+    _exp.record_context_events(user_id, user_message, ai_response,
+                               comprehension, user_attitude)
 
 
 # 全局单例

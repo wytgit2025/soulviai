@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """好奇心驱动引擎 — Curiosity Engine
 ==============================================
@@ -152,10 +152,14 @@ def _decide_action(user_id: str, entity: str, curiosity_value: float) -> Optiona
 
 
 def _can_search() -> bool:
-    """检查当前是否可以进行联网搜索。"""
+    """检查当前是否可以进行联网搜索。
+
+    search.py 对外只有一个 search()，早先这里探测的是 background_search /
+    search_web 两个并不存在的名字，导致恒为 False —— 好奇驱动的搜索永远不触发。
+    """
     try:
         from engine import search as search_module
-        return hasattr(search_module, 'background_search') or hasattr(search_module, 'search_web')
+        return callable(getattr(search_module, 'search', None))
     except Exception:
         return False
 

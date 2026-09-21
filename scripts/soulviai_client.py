@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
-"""soul-skill · 各形态共用的客户端薄层（纯标准库，无第三方依赖）
+"""soulviai · 各形态共用的客户端薄层（纯标准库，无第三方依赖）
 
 「本体只有一个」的落点就在这里：本层**不重新实现**任何定位项目、探测解释器、
-常驻优先、token 鉴权、退出码归一化的逻辑，只把 `soulctl.py` 已经写好的那套借出来用。
+常驻优先、token 鉴权、退出码归一化的逻辑，只把 `soulviaictl.py` 已经写好的那套借出来用。
 
 两条路径
 --------
   进程内（数据类命令：chat / state / pending / drain / ack / tick / init）
-      import soulctl → Ctx → _dispatch(...)
+      import soulviaictl → Ctx → _dispatch(...)
       只调用**不会 sys.exit** 的函数，避免把宿主进程（MCP server）一起带走。
 
   子进程（控制类命令：doctor / setup / serve / stop / selftest / install / autoconfig）
-      用 soulctl.py 自己的 CLI 跑，解析 stdout 末行 JSON。
+      用 soulviaictl.py 自己的 CLI 跑，解析 stdout 末行 JSON。
       这些命令天生就是在「启动另一个进程 / 改本机环境」，进程内复现等于把日志裁剪、
       pidfile、软链安装那一整套再抄一遍 —— 直接复用 CLI 更安全也更省事。
 
 调用方
 ------
-  scripts/soul_mcp.py   MCP server（把本层的方法暴露成 MCP 工具）
-  scripts/soulctl.py    更底层的那一层（本层的依赖）
+  scripts/soulviai_mcp.py   MCP server（把本层的方法暴露成 MCP 工具）
+  scripts/soulviaictl.py    更底层的那一层（本层的依赖）
 """
 import argparse
 import json
@@ -32,40 +32,40 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL_ROOT = os.path.dirname(HERE)
-SOULCTL = os.path.join(HERE, "soulctl.py")
+SOULVIAICTL = os.path.join(HERE, "soulviaictl.py")
 
 _MODULE = None
 
 
-def soulctl():
-    """惰性导入同目录的 soulctl（它是纯标准库脚本，顶层无副作用）。"""
+def soulviaictl():
+    """惰性导入同目录的 soulviaictl（它是纯标准库脚本，顶层无副作用）。"""
     global _MODULE
     if _MODULE is None:
         if HERE not in sys.path:
             sys.path.insert(0, HERE)
-        import soulctl as mod
+        import soulviaictl as mod
         _MODULE = mod
     return _MODULE
 
 
 def load_config(config_path=None):
-    """读取 config.yaml（优先级：参数 > $SOUL_CONFIG > 技能内 config.yaml）。"""
-    mod = soulctl()
-    path = config_path or os.environ.get("SOUL_CONFIG") or mod.CONFIG_PATH
+    """读取 config.yaml（优先级：参数 > $SOULVIAI_CONFIG > 技能内 config.yaml）。"""
+    mod = soulviaictl()
+    path = config_path or os.environ.get("SOULVIAI_CONFIG") or mod.CONFIG_PATH
     if not os.path.isfile(path):
         return {}
     try:
         with open(path, "r", encoding="utf-8") as fh:
             return mod.parse_flat_yaml(fh.read())
     except Exception as exc:
-        print("[soulclient] 读取配置失败 %s: %s" % (path, exc), file=sys.stderr)
+        print("[soulviai_client] 读取配置失败 %s: %s" % (path, exc), file=sys.stderr)
         return {}
 
 
 def _last_json(text):
-    """从 soulctl 的 stdout 里取出那条 JSON 结果。
+    """从 soulviaictl 的 stdout 里取出那条 JSON 结果。
 
-    soulctl 用的是 `json.dumps(..., indent=2)`，所以结果块是**多行**的：
+    soulviaictl 用的是 `json.dumps(..., indent=2)`，所以结果块是**多行**的：
     首行是顶格的 `{`，末行是 `}`。因此不能只按「单行以 { 开头」去找 ——
     先整体试解析，再从后往前按顶格 `{` 切片，最后才退化成全文扫描。
     """
@@ -118,7 +118,7 @@ class SoulClient(object):
 
     def __init__(self, project=None, python=None, user=None, config=None,
                  host=None, port=None, debug=False):
-        mod = soulctl()
+        mod = soulviaictl()
         self.mod = mod
         self.cfg = load_config(config)
         self.args = argparse.Namespace(project=project, python=python,
@@ -143,8 +143,8 @@ class SoulClient(object):
         return self.ctx.python
 
     def cli_python(self):
-        """跑 soulctl CLI 用的解释器（它只需 >=3.8）。"""
-        env = (os.environ.get("SOULCTL_PYTHON") or "").strip()
+        """跑 soulviaictl CLI 用的解释器（它只需 >=3.8）。"""
+        env = (os.environ.get("SOULVIAICTL_PYTHON") or "").strip()
         if env and os.path.isfile(env):
             return env
         if sys.executable:
@@ -182,7 +182,7 @@ class SoulClient(object):
             info["python_note"] = self.ctx.python_note
         if not self.ctx.project:
             info["hint"] = (getattr(self.ctx, "project_error", None)
-                            or "没找到引擎项目根目录（需含 soul.py 与 engine/）。")
+                            or "没找到引擎项目根目录（需含 soulviai.py 与 engine/）。")
         elif not self.ctx.python:
             info["hint"] = "没找到 >=3.10 的解释器，先跑 setup。"
         elif state == "down":
@@ -273,6 +273,15 @@ class SoulClient(object):
         return self._dispatch("POST", "/ack",
                               {"user_id": self.ctx.user, "ids": clean}, argv)
 
+    def env(self, refresh=False):
+        """环境信息（定位 / 天气）。refresh=True 强制忽略缓存重新采集。"""
+        payload = {"user_id": self.ctx.user}
+        argv = ["env", "--user", self.ctx.user]
+        if refresh:
+            payload["refresh"] = "1"
+            argv.append("--refresh")
+        return self._dispatch("GET", "/env", payload, argv)
+
     def tick(self):
         return self._dispatch("POST", "/tick", {"user_id": self.ctx.user},
                               ["tick", "--user", self.ctx.user], "chat")
@@ -286,22 +295,22 @@ class SoulClient(object):
 
     # ── 子进程：控制类命令 ───────────────────────────────────
     def cli(self, argv, timeout=180.0):
-        """跑 soulctl.py 的 CLI 并返回解析后的 JSON 结果。"""
-        cmd = [self.cli_python(), SOULCTL] + list(argv)
+        """跑 soulviaictl.py 的 CLI 并返回解析后的 JSON 结果。"""
+        cmd = [self.cli_python(), SOULVIAICTL] + list(argv)
         env = dict(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
-        env.pop("SOUL_DEBUG", None)
+        env.pop("SOULVIAI_DEBUG", None)
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True,
                                   timeout=timeout, env=env)
         except subprocess.TimeoutExpired:
-            return self._fail("soulctl 调用超时（%.0fs）。" % timeout, "timeout")
+            return self._fail("soulviaictl 调用超时（%.0fs）。" % timeout, "timeout")
         except Exception as exc:
-            return self._fail("无法启动 soulctl: %s" % exc, "spawn_failed")
+            return self._fail("无法启动 soulviaictl: %s" % exc, "spawn_failed")
         res = _last_json(proc.stdout)
         if res is None:
             return self._finish(
-                {"ok": False, "error": "soulctl 没有返回可解析的 JSON",
+                {"ok": False, "error": "soulviaictl 没有返回可解析的 JSON",
                  "error_code": "no_result", "returncode": proc.returncode,
                  "stderr_tail": _tail(proc.stderr)},
                 proc.returncode or self.mod.EXIT_ERR)
@@ -355,11 +364,11 @@ class SoulClient(object):
 
 
 def client_from_env(**override):
-    """按环境变量构造客户端（SOUL_PROJECT_ROOT / SOUL_PYTHON / SOUL_CONFIG）。"""
+    """按环境变量构造客户端（SOULVIAI_PROJECT_ROOT / SOULVIAI_PYTHON / SOULVIAI_CONFIG）。"""
     kwargs = {
-        "project": os.environ.get("SOUL_PROJECT_ROOT") or None,
-        "python": os.environ.get("SOUL_PYTHON") or None,
-        "config": os.environ.get("SOUL_CONFIG") or None,
+        "project": os.environ.get("SOULVIAI_PROJECT_ROOT") or None,
+        "python": os.environ.get("SOULVIAI_PYTHON") or None,
+        "config": os.environ.get("SOULVIAI_CONFIG") or None,
     }
     kwargs.update({k: v for k, v in override.items() if v is not None})
     return SoulClient(**kwargs)

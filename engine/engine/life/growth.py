@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """第9层 — 岁月动态成长层（带倒退机制）
 =============================================
@@ -25,6 +25,7 @@ import os
 from typing import Dict, Optional, Tuple
 from core import database as db
 from core import config as cfg
+from core.logging_utils import log_error
 from engine import mind as mind_module
 
 
@@ -142,7 +143,10 @@ def compute_growth_stage(user_id: str) -> dict:
     """
     mind_data = mind_module.get_mind(user_id)
     yrs = mind_data.get("years_precipitation", 0.05)
-    heal = mind_data.get("healing_reflection", 0.4)
+    # 缺省值必须与 personality 表的列默认值一致（core/database.py 的 healing_reflection）。
+    # 写 0.4 的话出生 composite 就已经 0.13，新灵魂会被直接推进第二阶段「拘谨礼貌」，
+    # 而 Stage 1「青涩试探」的区间是 (0, 0.10) —— 第一阶段天生不可达。
+    heal = mind_data.get("healing_reflection", 0.10)
     rf = mind_data.get("relationship_fatigue", 0.05)
     bond = mind_data.get("bidirectional_shaping", 0.05)
 
@@ -452,15 +456,18 @@ def _record_milestone(user_id: str, milestone_type: str, description: str, detai
             try:
                 with open(_MILESTONE_FILE, "r", encoding="utf-8") as f:
                     milestones = json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                # 读不出来就不能拿空列表覆盖写回，否则一次读取失败会让
+                # 全部成长里程碑蒸发。宁可丢这一次记录。
+                log_error("life.growth.milestone_unreadable", str(e), exc_info=True)
+                return
         milestones.append(entry)
         if len(milestones) > 500:
             milestones = milestones[-500:]
         with open(_MILESTONE_FILE, "w", encoding="utf-8") as f:
             json.dump(milestones, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        log_error("life.growth.save_milestone", str(e), exc_info=True)
 
 
 def get_milestones(user_id: str = "", milestone_type: str = "", limit: int = 50) -> list:
@@ -500,8 +507,12 @@ def check_and_apply_daily_years(user_id: str) -> bool:
             try:
                 with open(_YEARS_DAILY_TRACKER, "r", encoding="utf-8") as f:
                     tracker = json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                # tracker 是「所有用户 → 上次沉淀日期」，读失败后若用空字典继续，
+                # 末尾会把它覆盖写回 —— 其他用户的日期全丢，下次被重复补发。
+                # 返回 False 表示本次没处理，交给调用方，但绝不动这个文件。
+                log_error("life.growth.tracker_unreadable", str(e), exc_info=True)
+                return False
 
         last_date = tracker.get(user_id, "")
 
@@ -625,7 +636,7 @@ def advance_years(user_id: str):
     # 回退： 纯时间驱动逻辑
     mind_data = mind_module.get_mind(user_id)
     yrs = mind_data.get("years_precipitation", 0.05)
-    heal = mind_data.get("healing_reflection", 0.4)
+    heal = mind_data.get("healing_reflection", 0.10)   # 与表默认值、上面那处一致
 
     cfg = GROWTH_CONFIG
     delta = random.uniform(cfg["years_advance_daily_min"], cfg["years_advance_daily_max"])

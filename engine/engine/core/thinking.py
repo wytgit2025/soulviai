@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """自主存在思维层 — 因果 x 时间 x 遗憾
 : 整合 contradiction_engine 的四轮博弈结果，生成有思考痕迹的表达指令。

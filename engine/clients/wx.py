@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """微信 iLink Bot 客户端
 直接对接微信官方 iLink Bot API (https://ilinkai.weixin.qq.com)

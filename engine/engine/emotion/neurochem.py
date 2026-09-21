@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """神经递质化学动力学层 — Neurochemical Dynamics
 ========================================================
@@ -316,7 +316,7 @@ def on_interaction_with_rpe(user_id: str, comprehension: dict, attitude: str):
     # 正预测误差 → 加强学习信号
     if rpe > 0.01:
         try:
-            mind_module = __import__('engine.mind', fromlist=['mind'])
+            from engine import mind as mind_module
             mind_module.adjust_mind_dimensions(
                 user_id,
                 {"favoritism": min(0.01, rpe * 0.5)},
@@ -328,7 +328,7 @@ def on_interaction_with_rpe(user_id: str, comprehension: dict, attitude: str):
     # 负预测误差 → 防御/敏感升高
     if rpe < -0.02:
         try:
-            mind_module = __import__('engine.mind', fromlist=['mind'])
+            from engine import mind as mind_module
             mind_module.adjust_mind_dimensions(
                 user_id,
                 {"sensitivity_paranoia": min(0.01, abs(rpe) * 0.3)},

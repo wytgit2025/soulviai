@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """线程安全的 JSON 持久化存储
 解决全系统 JSON 文件并发读写冲突问题。
@@ -65,7 +65,11 @@ class JsonStore:
         self._cache_version: int = 0
 
     def _ensure_dir(self):
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        # 相对路径（如 "foo.json"）没有目录部分，dirname 返回 ''，
+        # 直接 makedirs('') 会抛 FileNotFoundError —— 空目录名跳过即可。
+        d = os.path.dirname(self.path)
+        if d:
+            os.makedirs(d, exist_ok=True)
 
     def _acquire_file_lock(self, file_obj) -> bool:
         """获取文件锁（非阻塞），重试多次"""
@@ -93,6 +97,11 @@ class JsonStore:
             try:
                 with open(self.path, "r", encoding="utf-8") as f:
                     if not self._acquire_file_lock(f):
+                        # 拿不到锁只说明有并发写者，文件本身没坏 —— 记一笔就好，
+                        # 千万别挪走它，那会干扰正在写的进程。
+                        from core.logging_utils import log_error
+                        log_error("json_store.read_locked",
+                                  "%s: 未能获取读锁，本次返回默认值" % self.path)
                         self._cache = self._deep_copy(self.default)
                         return self._cache
                     try:
@@ -101,7 +110,11 @@ class JsonStore:
                         self._release_file_lock(f)
                 self._cache_dirty = False
                 return self._cache
-            except (json.JSONDecodeError, IOError, OSError):
+            except (json.JSONDecodeError, IOError, OSError) as e:
+                # 读失败却返回默认值，等于交给调用方一个「看起来本来就是空」的容器；
+                # 它一旦 write() 回来，损坏文件就被空数据永久覆盖 —— 静默丢数据。
+                # 先把现场挪成 .corrupt 再记日志，最后才降级返回默认值。
+                self._quarantine_unreadable(e)
                 self._cache = self._deep_copy(self.default)
                 return self._cache
 
@@ -123,19 +136,41 @@ class JsonStore:
             self._cache_version += 1
             self._flush()
 
-    def _flush(self):
-        """写入磁盘"""
-        self._ensure_dir()
+    def _quarantine_unreadable(self, exc: Exception):
+        """读不出来的文件先挪到 .corrupt 备份，再记日志。
+
+        降级返回 default 是既有的向后兼容行为，但那个「空」一旦被 write() 写回，
+        损坏文件就被永久覆盖了。先把现场留下：哪怕后面照样覆盖，也捞得回来。
+        """
+        from core.logging_utils import log_error
+        log_error("json_store.read_unreadable", "%s: %s" % (self.path, exc), exc_info=True)
         try:
-            with open(self.path, "w", encoding="utf-8") as f:
-                if not self._acquire_file_lock(f):
-                    return
-                try:
-                    json.dump(self._cache, f, ensure_ascii=False, indent=2)
-                finally:
-                    self._release_file_lock(f)
-        except (IOError, OSError) as e:
-            print(f"[JsonStore] 写入失败 {self.path}: {e}")
+            if os.path.exists(self.path):
+                os.replace(self.path, self.path + ".corrupt")
+        except Exception:  # 备份只是补救，失败不该影响「读降级返回默认值」这条主路径
+            pass
+
+    def _flush(self):
+        """写入磁盘：先写临时文件，再原子替换目标文件。
+
+        原先直接 open(path, "w") 会**先截断**目标文件，若随后加锁失败就 return，
+        文件已被清空且无人知晓 —— 一次并发就能把整个文件抹成空。改成写临时文件
+        再 os.replace 之后，目标文件要么还是旧内容、要么是新内容，不存在中间态。
+        """
+        self._ensure_dir()
+        tmp = "%s.tmp.%d.%d" % (self.path, os.getpid(), threading.get_ident())
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self._cache, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.path)
+        except Exception as e:
+            from core.logging_utils import log_error
+            log_error("json_store.flush", "%s: %s" % (self.path, e), exc_info=True)
+            try:
+                os.unlink(tmp)
+            # 清理临时文件失败不重要，主错误上面已经记过了
+            except OSError:
+                pass
 
     def append(self, key: str, value: Any, max_len: int = None):
         """向列表类型的 key 追加元素"""

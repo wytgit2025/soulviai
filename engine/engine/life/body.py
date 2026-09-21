@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """第10层 — 身心合一躯体生命体征层（完整版）
 =================================================
@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from core import database as db
 from core import config as cfg
+from core.logging_utils import log_error
 from engine import mind as mind_module
 
 
@@ -39,6 +40,21 @@ BODY_CONFIG = {
 }
 
 
+def _quarantine_unreadable(path: str, exc: Exception, source: str):
+    """读不出来的持久化文件先挪到 .corrupt 备份，再记日志。
+
+    加载失败后内存里是空的，而这个空内存迟早会被写回磁盘 —— 身体记忆是跨会话的，
+    覆盖了就真没了。所以先把现场留下：哪怕后面照样覆盖，原始内容也捞得回来。
+    """
+    log_error(source, str(exc), exc_info=True)
+    try:
+        import os
+        if os.path.exists(path):
+            os.replace(path, path + ".corrupt")
+    except Exception:  # 备份失败不改变主流程：它只是补救，本身不该再抛
+        pass
+
+
 def load_engine_config():
     """从 config.json 加载躯体引擎参数 + 加载身体记忆缓存"""
     global BODY_CONFIG, _body_memory_cache
@@ -52,7 +68,9 @@ def load_engine_config():
         raw = store.read()
         if raw:
             _body_memory_cache = raw
-    except Exception:
+    except Exception as e:
+        # 空内存迟早会被 _save_body_memory 写回，先把现场挪走再继续。
+        _quarantine_unreadable(_BODY_MEM_FILE, e, "life.body.memory_load_failed")
         _body_memory_cache = {}
     # v3: 加载人物绑定体感
     _load_person_body_bindings()
@@ -578,9 +596,19 @@ def build_body_enforcement(user_id: str = "", mind_data: dict = None, life_data:
         lines.append(cmd)
 
     # ── 社交疲劳约束 ──
-    if social_fatigue > 0.6:
+    # 档位线取 life.SOCIAL_FATIGUE_*（唯一来源，可在 config.json 的 life 段覆盖）。
+    # 这里原先写的是 0.6/0.4，与状态文案 0.7/0.5、门控 0.75/0.55 三套并存 ——
+    # 同一份状态在不同地方被算成不同的档，出现「状态说还行、提示词已经让我闭嘴」。
+    # 懒加载：life.py 在模块级 import 本模块，模块级反向导入会成环。
+    try:
+        from engine.life import life as _life_module
+        _tired = _life_module.SOCIAL_FATIGUE_TIRED
+        _overload = _life_module.SOCIAL_FATIGUE_OVERLOAD
+    except Exception:
+        _tired, _overload = 0.55, 0.75
+    if social_fatigue > _overload:
         lines.append("· 社交严重过载——你不想跟任何人说太多话。能简短就简短。")
-    elif social_fatigue > 0.4:
+    elif social_fatigue > _tired:
         lines.append("· 社交有点累了——话少一点，给自己省点电。")
 
     # ── ANS 状态约束 ──
@@ -738,8 +766,10 @@ def _save_body_memory():
     try:
         store = _get_body_memory_store()
         store.write(_body_memory_cache)
-    except Exception:
-        pass
+    except Exception as e:
+        # 身体记忆是跨会话的：写丢了，下次遇到同样情境 Ta 会像没学过一样，
+        # 用户只会觉得「Ta 好像忘了」，查不到原因 —— 这类失败必须留痕。
+        log_error("life.body.save_body_memory", str(e), exc_info=True)
 
 
 def record_body_conditioning(user_id: str, trigger: dict, sensation: str,
@@ -858,7 +888,10 @@ def form_conditioning_from_interaction(user_id: str, comprehension: dict,
 
 _body_timeseries: Dict[str, List[Dict]] = {}
 _internal_sense: Dict[str, Dict] = {}
-_TIMESERIES_FILE = "data/json/body_timeseries.json"
+# 名字必须与 _get_body_timeseries_store() 和迁移清单一致：原先定义成
+# `_TIMESERIES_FILE`，取用方写的却是 `_BODY_TIMESERIES_FILE` —— 差一个前缀，
+# 于是每次读写都抛 NameError 并被 except 吞掉，体感时间序列从未真正落盘过。
+_BODY_TIMESERIES_FILE = "data/json/body_timeseries.json"
 _MAX_TIMESERIES = 240
 
 
@@ -869,7 +902,8 @@ def load_body_timeseries():
         raw = store.read()
         if raw:
             _body_timeseries = raw
-    except Exception:
+    except Exception as e:
+        _quarantine_unreadable(_BODY_TIMESERIES_FILE, e, "life.body.timeseries_load_failed")
         _body_timeseries = {}
 
 
@@ -928,8 +962,9 @@ def _save_person_body_bindings():
         os.makedirs(os.path.dirname(_PERSON_BODY_FILE), exist_ok=True)
         with open(_PERSON_BODY_FILE, "w", encoding="utf-8") as f:
             json.dump(_PERSON_BODY_BINDINGS, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        # 「对谁产生过什么体感」是关系记忆的一部分，写失败不能无声无息。
+        log_error("life.body.save_person_body_bindings", str(e), exc_info=True)
 
 
 def _load_person_body_bindings():
@@ -939,7 +974,8 @@ def _load_person_body_bindings():
         if os.path.exists(_PERSON_BODY_FILE):
             with open(_PERSON_BODY_FILE, "r", encoding="utf-8") as f:
                 _PERSON_BODY_BINDINGS = json.load(f)
-    except Exception:
+    except Exception as e:
+        _quarantine_unreadable(_PERSON_BODY_FILE, e, "life.body.person_bindings_load_failed")
         _PERSON_BODY_BINDINGS = {}
 
 
@@ -962,15 +998,18 @@ def record_body_sensation_log(user_id: str, old_sensation: str, new_sensation: s
                 try:
                     with open(_BODY_SENSATION_LOG_FILE, "r", encoding="utf-8") as f:
                         logs = json.load(f)
-                except Exception:
-                    pass
+                except Exception as e:
+                    # 读不出来就**不能**拿空列表往下走：下面会把它覆盖写回，
+                    # 一次读取失败等于抹掉全部历史体感日志。宁可丢这一次记录。
+                    log_error("life.body.sensation_log_unreadable", str(e), exc_info=True)
+                    return
             logs.append(entry)
             if len(logs) > _BODY_SENSATION_LOG_MAX:
                 logs = logs[-_BODY_SENSATION_LOG_MAX:]
             with open(_BODY_SENSATION_LOG_FILE, "w", encoding="utf-8") as f:
                 json.dump(logs, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        log_error("life.body.save_sensation_log", str(e), exc_info=True)
 
 
 def get_body_sensation_log(user_id: str = "", limit: int = 50) -> list:
@@ -1032,8 +1071,8 @@ def _save_body_timeseries():
     try:
         store = _get_body_timeseries_store()
         store.write(_body_timeseries)
-    except Exception:
-        pass
+    except Exception as e:
+        log_error("life.body.save_body_timeseries", str(e), exc_info=True)
 
 
 def tick_body_sensation(user_id: str, mind_data: dict, dt: float = 1.0):

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """独一无二生命特质能力（第21项终极灵魂能力）
 基于24维心智数值 + 宿命交互历史 + 人格阶段，生成全网唯一的生命特质签名

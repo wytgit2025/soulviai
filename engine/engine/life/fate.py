@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """双向宿命灵魂共生终极层（完整重写）
 ==========================================
@@ -170,7 +170,7 @@ def _ensure_soul_stamp(user_id: str):
             return stamp_val
 
         # 生成一次性不可变印记
-        raw = f"{user_id}:{time.time()}:{random.random()}:SOUL_LOCK"
+        raw = f"{user_id}:{time.time()}:{random.random()}:SOULVIAI_LOCK"
         stamp = hashlib.sha256(raw.encode()).hexdigest()[:24].upper()
         _soul_stamp_cache[user_id] = stamp
 

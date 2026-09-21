@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """承诺追踪引擎 — Commitment Tracker
 让系统记住"对用户承诺过什么"，跨会话追踪兑现状态。

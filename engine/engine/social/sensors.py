@@ -1,24 +1,25 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """环境感知引擎 — 外部上下文注入 + 天气→心智映射
 
-设计原则：**引擎自己不上网**。
+本模块只负责**接收与注入**，自己不上网。环境信息有两条来源：
 
-技能运行在 Agent（OpenClaw / CodeBuddy 等）之下，Agent 本身能联网、也掌握
-对话里出现的位置信息。因此环境信息由调用方查好后注入：
+  1) 调用方注入（显式，优先）
+     python3 scripts/soulviaictl.py chat --text "..." --env "上海 小雨 24°C"
+     好处：Agent 掌握对话上下文，比按 IP 猜城市更准；沙箱内纯参数传递也能用。
 
-    python3 scripts/soulctl.py chat --text "..." --env "上海 小雨 24°C"
+  2) 引擎自采（social/env_source.py，开关见 config.json 的 env_auto 段）
+     没等到注入时自己查一次 IP 定位 + Open-Meteo 天气，两个源都免 Key。
+     取不到就静默降级 —— 宁可没有环境信息，也不要阻塞对话。
 
-好处：
-  - 不需要任何天气 API Key
-  - 不把用户 IP 发给第三方定位服务
-  - 沙箱内同样可用（纯参数传递）
-  - Agent 掌握对话上下文，比按 IP 猜城市更准
+优先级：**当轮显式注入 > 引擎自采**。engine_bridge.run_chat 在每轮开头把来源
+重置为「引擎可写」，调用方一旦注入就标成 caller，env_source.apply() 看到
+caller 会让步 —— 否则用户说了「我在北京出差」，会被 IP 猜的城市反手覆盖。
 
-注入的文本会被：
+注入的内容会被：
   1) 原样作为【环境感知】注入推理 prompt（get_weather_context）
-  2) 关键词推导出晴雨/温度，驱动 24 维心智修正（apply_weather_to_mind）
+  2) 关键词/天气码推导出晴雨、温度、体感，驱动 24 维心智修正（apply_weather_to_mind）
 """
 import re
 import time
@@ -40,6 +41,7 @@ def safe_print(*args, **kwargs):
 # ── 外部环境上下文（唯一的环境信息来源）──
 _external_context = ""
 _external_flags: dict = {}
+_external_origin = "engine"   # "caller"（调用方显式注入）| "engine"（引擎自采）
 _updated_at = 0.0
 _lock = threading.Lock()
 
@@ -166,20 +168,24 @@ def _parse_env_flags(text: str) -> dict:
     return flags
 
 
-def _store(text, flags):
-    """写入环境上下文与推导状态（内部）。"""
-    global _external_context, _external_flags, _updated_at
+def _store(text, flags, origin="caller"):
+    """写入环境上下文与推导状态（内部）。
+
+    origin: "caller" 表示调用方显式注入，env_source.apply() 会让步于它。
+    """
+    global _external_context, _external_flags, _external_origin, _updated_at
     text = (text or "").strip()
     with _lock:
         _external_context = text
         _external_flags = dict(flags or {})
+        _external_origin = origin or "caller"
         _updated_at = time.time() if text else 0.0
     if text:
         safe_print("[Sensors] 已注入外部环境上下文: %s" % text)
     return bool(text)
 
 
-def set_external_context(text: str) -> bool:
+def set_external_context(text: str, origin: str = "caller") -> bool:
     """注入外部环境上下文（自由文本）。
 
     中英文都可以，例如「上海 小雨 24°C」或「Shanghai light rain 24C」：
@@ -188,17 +194,24 @@ def set_external_context(text: str) -> bool:
     传空字符串等于清除。返回 True 表示成功注入。
     """
     text = (text or "").strip()
-    return _store(text, _parse_env_flags(text) if text else {})
+    return _store(text, _parse_env_flags(text) if text else {}, origin)
 
 
-def set_external_context_json(data: dict) -> bool:
+def set_external_context_json(data: dict, origin: str = "caller") -> bool:
     """结构化注入环境上下文（推荐，比自由文本更稳）。
 
     支持字段（都可选，缺的会自动推导）：
-      city / location              城市名
+      city / location              城市名（用于关键词判定）
+      place                        地名，给模型看的显示名，可含省/国家
+                                   （缺省时用 city；env_source 自采会传
+                                   「中国 浙江 杭州」，city 仍是「杭州」）
       description / weather        天气描述（中英文均可）
       temperature                  温度（摄氏；华氏请自行换算）
+      apparent / feels_like        体感温度（摄氏）
+      humidity                     相对湿度（%）
       weather_code                 WMO 天气码
+      temp_max / temp_min          今天最高/最低温（摄氏）
+      precip_prob                  降水概率（%）
       is_raining / is_snowing / is_extreme   直接指定状态
 
     返回 True 表示成功注入。
@@ -207,6 +220,10 @@ def set_external_context_json(data: dict) -> bool:
         return False
 
     city = str(data.get("city") or data.get("location") or "").strip()
+    # 显示名与判定名分开：place 可能带省/国家（自采走 IP 时是「中国 浙江 杭州」），
+    # 而 city 保持裸城市名 —— 下面 _parse_env_flags 拿它推导天气关键词，
+    # 掺进「浙江省」之类只会白白扩大误判面。
+    place = str(data.get("place") or "").strip() or city
     desc = str(data.get("description") or data.get("weather")
                or data.get("desc") or "").strip()
 
@@ -218,12 +235,22 @@ def set_external_context_json(data: dict) -> bool:
         except (TypeError, ValueError):
             pass
 
-    temp = data.get("temperature")
-    if temp is not None:
-        try:
-            flags["temperature"] = float(temp)
-        except (TypeError, ValueError):
-            pass
+    # 数值字段：温度/体感/湿度/今天最高最低/降水概率
+    for key, aliases in (("temperature", ("temperature", "temp")),
+                         ("apparent", ("apparent", "feels_like")),
+                         ("humidity", ("humidity",)),
+                         ("temp_max", ("temp_max", "temperature_max")),
+                         ("temp_min", ("temp_min", "temperature_min")),
+                         ("precip_prob", ("precip_prob", "precipitation_probability"))):
+        for name in aliases:
+            val = data.get(name)
+            if val is None:
+                continue
+            try:
+                flags[key] = round(float(val), 1)
+                break
+            except (TypeError, ValueError):
+                continue
 
     # 文本推导：用于补齐 weather_code 与布尔状态
     from_text = _parse_env_flags("%s %s" % (city, desc)) if (city or desc) else {}
@@ -242,13 +269,24 @@ def set_external_context_json(data: dict) -> bool:
         else:
             flags[key] = code_val
 
-    # 组装给 prompt 看的展示文本
-    parts = [p for p in (city, desc) if p]
+    # 组装给 prompt 看的展示文本。体感/湿度过去只进了 `soulviact env` 的展示
+    # （env_source.text()），没进这里 —— 采集了却不给模型看，等于白采。
+    # 城市用 place（带省/国家）而不是裸 city，原因相同：IP 定位的
+    # 「浙江」「中国」采到了就该让模型看见。
+    parts = [p for p in (place, desc) if p]
     if flags.get("temperature") is not None:
         parts.append("%g°C" % flags["temperature"])
+    if flags.get("apparent") is not None:
+        parts.append("体感 %g°C" % flags["apparent"])
+    if flags.get("humidity") is not None:
+        parts.append("湿度 %g%%" % flags["humidity"])
+    if flags.get("temp_min") is not None and flags.get("temp_max") is not None:
+        parts.append("今天 %g~%g°C" % (flags["temp_min"], flags["temp_max"]))
+    if flags.get("precip_prob") is not None:
+        parts.append("降水概率 %g%%" % flags["precip_prob"])
 
     flags = {k: v for k, v in flags.items() if v is not None}
-    return _store(" ".join(parts), flags)
+    return _store(" ".join(parts), flags, origin)
 
 
 def get_external_context() -> str:
@@ -267,19 +305,42 @@ def get_external_flags() -> dict:
         return dict(_external_flags)
 
 
+def external_origin() -> str:
+    """当前环境上下文的来源："caller"（调用方显式注入）或 "engine"（引擎自采）。"""
+    with _lock:
+        return _external_origin
+
+
+def has_caller_context() -> bool:
+    """当前上下文是不是调用方显式注入的（是的话引擎自采应该让步）。"""
+    with _lock:
+        return _external_origin == "caller" and bool(_external_context)
+
+
+def reset_origin(origin: str = "engine"):
+    """把来源重置为「引擎可写」。engine_bridge.run_chat 在每轮开头调用。
+
+    不重置的话会有个隐性锁死：某一轮调用方注入过环境，来源就一直停在 caller，
+    env_source.apply() 之后永远让步，引擎自采的天气再也进不来。
+    """
+    global _external_origin
+    with _lock:
+        _external_origin = origin or "engine"
+
+
 def load_engine_config():
     """保留此接口以兼容启动流程。
 
-    环境信息改由调用方注入，这里不再读取任何配置项，
-    因此函数体为空。
+    环境信息改由调用方注入或 env_source 自采（config.json 的 env_auto 段），
+    这里不再读取任何配置项，因此函数体为空。
     """
     return
 
 
 def init():
     """初始化钩子（保留以兼容 SoulEngine 启动流程）。"""
-    safe_print("[Sensors] 环境感知就绪：等待调用方通过 chat --env 注入"
-               "（引擎不自行联网查天气）")
+    safe_print("[Sensors] 环境感知就绪：优先采用 chat --env 注入，"
+               "未注入时由 env_source 自采")
 
 
 # ────────────────────────────────────────────────────────────
@@ -317,8 +378,17 @@ def get_weather_summary() -> str:
 
 
 def get_location_info() -> dict:
-    """位置信息。引擎不再做 IP 定位，恒返回空字典（保留接口兼容）。"""
-    return {}
+    """当前位置（城市 / 经纬度 / 来源）。没启用自采、或取不到时返回空字典。
+
+    惰性 import：env_source 反过来依赖本模块，模块顶层互相导入会成环。
+    """
+    try:
+        from . import env_source
+        snap = env_source.snapshot()
+    except Exception:
+        return {}
+    loc = (snap or {}).get("location") or {}
+    return dict(loc)
 
 
 def apply_weather_to_mind(user_id: str) -> dict:
@@ -333,6 +403,10 @@ def apply_weather_to_mind(user_id: str) -> dict:
         return {}
 
     temp = flags.get("temperature")
+    # 冷热判定优先用体感：气温 28 / 体感 32 的那种闷热，只看气温判不出来
+    feels = flags.get("apparent")
+    if feels is None:
+        feels = temp
     code = flags.get("weather_code")
     is_raining = flags.get("is_raining", False)
     is_snowing = flags.get("is_snowing", False)
@@ -346,17 +420,19 @@ def apply_weather_to_mind(user_id: str) -> dict:
         conditions.append("snow")
     if is_extreme:
         conditions.append("extreme")
-    if temp is not None and temp > 30:
+    if feels is not None and feels > 30:
         conditions.append("hot")
-    if temp is not None and temp < 5:
+    if feels is not None and feels < 5:
         conditions.append("cold")
 
     # 多云/阴天
     if code in (2, 3):
         conditions.append("cloudy")
 
-    # 晴天
-    if code == 0 and not conditions:
+    # 晴天。这里只排除「雨中带晴」这种自相矛盾的情形，**不再被温度条件挡掉** ——
+    # 原来的 `and not conditions` 会让「晴 31°C」既拿到 hot 又永远拿不到 clear，
+    # 天空状态和温度状态本来就不是互斥的。
+    if code == 0 and not (is_raining or is_snowing or is_extreme):
         conditions.append("clear")
 
     import random as _r

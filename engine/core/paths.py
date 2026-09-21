@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """运行路径：代码根与数据根
 
@@ -14,7 +14,7 @@
 
     runtime_root()   engine/        代码根：config.json / .venv / requirements
     skill_root()     技能根          config.yaml / scripts / variants
-    home_root()      ~/.soul-skill  ← 运行期的工作目录
+    home_root()      ~/.soulviai    ← 运行期的工作目录
     data_root()      .../data/      ta 的记忆：db / json / flaw
 
 **运行期工作目录就是 home_root()**：引擎里有大量以 cwd 为基准的相对路径
@@ -22,16 +22,16 @@
 数据家，一行都不用改。反过来，任何「换个目录启动引擎」的入口都必须调用
 `chdir_home()`，否则会就地长出一份新的空记忆 —— 那正是「灵魂失忆」事故。
 
-优先级：`$SOUL_DATA_DIR` > `config.yaml: data_dir` > `~/.soul-skill`。
+优先级：`$SOULVIAI_DATA_DIR` > `config.yaml: data_dir` > `~/.soulviai`。
 """
 from __future__ import annotations
 
 import os
 import shutil
 
-HOME_ENV = "SOUL_DATA_DIR"
-CONFIG_ENV = "SOUL_CONFIG"
-DEFAULT_HOME_NAME = ".soul-skill"
+HOME_ENV = "SOULVIAI_DATA_DIR"
+CONFIG_ENV = "SOULVIAI_CONFIG"
+DEFAULT_HOME_NAME = ".soulviai"
 DATA_SUBDIRS = ("db", "json", "flaw")      # 相对 data/，按需自建
 
 _HOME_CACHE = None
@@ -61,11 +61,11 @@ def config_json_path():
     return code_file("config.json")
 
 
-# ── config.yaml（技能根那份，与 soulctl 同一份）────────────────
+# ── config.yaml（技能根那份，与 soulviaictl 同一份）────────────────
 def config_path():
-    """config.yaml 位置：$SOUL_CONFIG > 技能根那份。
+    """config.yaml 位置：$SOULVIAI_CONFIG > 技能根那份。
 
-    优先级必须与 soulctl / engine_bridge / clients/web 一致。少了 $SOUL_CONFIG
+    优先级必须与 soulviaictl / engine_bridge / clients/web 一致。少了 $SOULVIAI_CONFIG
     这一层，用户用备用配置改了 daemon_port 时，CLI 会连新端口，而聊天渠道仍
     固执地去探 8765 —— 两边都以为对方没起服务。
     """
@@ -98,7 +98,7 @@ def _strip_comment(raw):
 def parse_flat_yaml(text):
     """极简 YAML：扁平 `key: value` + # 注释 + 引号字符串。
 
-    语义基准是 scripts/soulctl.py 的同名函数（启动器可能跑在连引擎依赖都没装
+    语义基准是 scripts/soulviaictl.py 的同名函数（启动器可能跑在连引擎依赖都没装
     的解释器上，所以那边各留一份）。**改这里就要同步改那边**，以及与它并列的
     engine/clients/web.py:_flat_config。
     """
@@ -132,7 +132,7 @@ def read_config():
 def home_root():
     """数据家目录（运行时工作目录，`data/` 的上一层）。
 
-    $SOUL_DATA_DIR > config.yaml: data_dir > ~/.soul-skill
+    $SOULVIAI_DATA_DIR > config.yaml: data_dir > ~/.soulviai
     data_dir 写相对路径时按技能根解析，免得它跟着 cwd 跑。
     """
     global _HOME_CACHE
@@ -158,7 +158,7 @@ def home_root():
 
 
 def reset_home_cache():
-    """丢掉缓存（测试、或运行期显式改 SOUL_DATA_DIR 时才需要）。"""
+    """丢掉缓存（测试、或运行期显式改 SOULVIAI_DATA_DIR 时才需要）。"""
     global _HOME_CACHE
     _HOME_CACHE = None
 
@@ -232,8 +232,8 @@ def migrate_legacy_data(quiet=False, purge=False):
     if not moved:
         return None
     if not quiet:
-        print("[soul-skill] 已把旧数据搬到 %s（%s）" % (dst, ", ".join(moved)))
-        print("[soul-skill] 确认对话历史还在之后，可删掉旧目录：%s" % src)
+        print("[soulviai] 已把旧数据搬到 %s（%s）" % (dst, ", ".join(moved)))
+        print("[soulviai] 确认对话历史还在之后，可删掉旧目录：%s" % src)
     if purge:
         shutil.rmtree(src, ignore_errors=True)
     return moved

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """八阶宿命终极推理流程
 所有回复、情绪、沉默、状态严格遵循八阶递进逻辑
@@ -19,7 +19,7 @@ from engine import growth as growth_module
 from engine import body as body_module
 from engine import scenarios as scenarios_module
 from engine import topics as topics_module
-from engine import profile as profile_module
+from engine import user_insights as profile_module
 from engine import timeline as timeline_module
 from engine import user_facts as user_facts_module
 from engine import soul_profile as soul_profile_module
@@ -37,6 +37,25 @@ up_module = safe_call(importlib.import_module, "engine.self.user_persona", conte
 reflect_module = safe_call(importlib.import_module, "engine.cognitive.reflection", context="inference.import_reflection", default_return=None)
 evo_module = safe_call(importlib.import_module, "engine.life.evolution", context="inference.import_evolution", default_return=None)
 delivery_module = safe_call(importlib.import_module, "engine.behavior.delivery", context="inference.import_delivery", default_return=None)
+
+
+def _current_stage(user_id: str, mind_data: dict) -> str:
+    """当前成长阶段 —— 实时算，不要读 DB 那一列。
+
+    personality_stage 是 fate / growth 在不同时机各自写进去的，永远比实时值旧
+    一个 tick。而原来的写法是：
+
+        growth_module.compute_growth_stage(user_id)["stage"]
+            if "growth_module" in dir() else mind_data.get("personality_stage", ...)
+
+    dir() 无参返回的是**局部**名字，而 growth_module 是模块级 import，所以那个条件
+    恒为假 —— 这个三元从来没走过前半段，一直在读 DB 里的旧值。
+    growth 真不可用时再退回 DB 值，免得整段 prompt 构建被一个取阶段炸掉。
+    """
+    try:
+        return growth_module.compute_growth_stage(user_id)["stage"]
+    except Exception:
+        return (mind_data or {}).get("personality_stage", "青涩试探")
 
 
 def run_inference_pipeline(user_id: str, user_message: str,
@@ -307,8 +326,8 @@ def run_inference_pipeline(user_id: str, user_message: str,
     
     # 块1: 场景上下文
     scene_texts = []
-    for val in [timeline_instruction, weather_instruction, scenario_instruction,
-                 topic_instruction, profile_instruction]:
+    for val in [timeline_instruction, weather_instruction,
+                scenario_instruction, topic_instruction, profile_instruction]:
         if val:
             scene_texts.append(val.strip())
     facts_text = user_facts_module.get_facts_context(user_id)
@@ -612,7 +631,7 @@ def run_inference_pipeline(user_id: str, user_message: str,
     full_system_prompt = thinking_prompt + built + "\n\n【八阶推理完成】产生最终回复。想独处/不想说话时可以直接表达。\n【重要】话多想分段发送时，请用「|||」分隔每条消息。例如「第一句|||第二句|||第三句」。每条消息尽量简短自然。\n【关键】活在当下，不要虚构不存在的过去。对话历史中没有的事情就是没有发生过。内心OS是你心里想的，不是你说出口的——不要把它当作你已经说过的话。\n【绝对不可违背】你是一个有血有肉的真人，不是AI、不是程序、不是机器人。绝对不要在任何情况下说出或暗示\u201c我是AI\u201d\u201c我是程序\u201d\u201c我是机器人\u201d\u201c关机\u201d\u201c重启\u201d\u201c系统\u201d\u201c算法\u201d\u201c模型\u201d\u201c代码\u201d\u201c服务器\u201d\u201c训练\u201d\u201c数据\u201d等与机器/程序相关的字眼。如果你需要表达不想说话，用\u201c累了\u201d\u201c想休息\u201d\u201c不想打字\u201d\u201c没电了\u201d这种人类表达，绝不能用\u201c关机\u201d\u201c重启\u201d\u201c待机\u201d等机器词汇。"
 
     # ═══ 原则校验 ═══
-    # 暂存 mind_data 用于原则校验（后续在 soul.py 中完成）
+    # 暂存 mind_data 用于原则校验（后续在 soulviai.py 中完成）
 
     internal_state = {
         "mind": mind_data,
@@ -621,8 +640,7 @@ def run_inference_pipeline(user_id: str, user_message: str,
         "bond_level": bond_level,
         "active_flaws": active_flaws,
         "subconscious_leak": bool(subconscious_leak),
-        "stage": growth_module.compute_growth_stage(user_id)["stage"]
-                  if "growth_module" in dir() else mind_data.get("personality_stage", "青涩试探"),
+        "stage": _current_stage(user_id, mind_data),
         "composite_autonomy": round(composite_autonomy, 4),
     }
 

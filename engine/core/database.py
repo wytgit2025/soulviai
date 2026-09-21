@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """五大终极数据库核心表
 personality / subconscious / memory / life / fate
@@ -71,7 +71,12 @@ def _create_tables(conn: sqlite3.Connection):
             emotional_volatility REAL DEFAULT 0.30,
             years_precipitation REAL DEFAULT 0.05,
             relationship_fatigue REAL DEFAULT 0.05,
-            healing_reflection REAL DEFAULT 0.40,
+            -- 0.40 会让出生瞬间的 composite 就到 0.13（见 growth.compute_growth_stage
+            -- 的加权公式），直接落进第二阶段「拘谨礼貌」；而 personality_stage 的默认
+            -- 值写的是「青涩试探」—— 两处打架，于是第一次写阶段就会记出一条假的「阶段
+            -- 蜕变」。0.10 与 agent_factory 给社会智能体的缺省一致，出生 composite ≈ 0.04，
+            -- 落在第一阶段。
+            healing_reflection REAL DEFAULT 0.10,
             body_perception REAL DEFAULT 0.50,
             autonomous_values REAL DEFAULT 0.45,
             life_vitality REAL DEFAULT 0.60,
@@ -222,7 +227,7 @@ def _create_tables(conn: sqlite3.Connection):
         )
     """)
 
-    # 用户身份表（双向身份系统的另一半，与 profile.py 的 user_profile 分离）
+    # 用户身份表（双向身份系统的另一半，与 user_insights.py 的 user_profile 分离）
     conn.execute("""
     CREATE TABLE IF NOT EXISTS user_identity (
             user_id TEXT PRIMARY KEY,

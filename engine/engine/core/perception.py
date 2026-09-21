@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """全维氛围精准感知层（v3 — 状态机+深度融合版）
 高精度识别对话氛围、隐性情绪、敷衍程度等9大隐性状态。

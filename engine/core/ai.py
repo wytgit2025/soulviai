@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """
 AI 对话客户端
@@ -155,7 +155,7 @@ def _trip_backend_breaker(exc) -> bool:
     if first:
         print("[AI] ⛔ 模型接口认证/额度不可用，已熔断全部后台调用"
               "（服务保持存活，前台对话仍会尝试以便归因）；"
-              "修好 ai.api_key / ai.model 后跑 `soulctl reload-ai` 就地恢复。"
+              "修好 ai.api_key / ai.model 后跑 `soulviaictl reload-ai` 就地恢复。"
               "原因: %s" % msg)
     return True
 

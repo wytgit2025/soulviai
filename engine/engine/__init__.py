@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """
 soulviai — 引擎各层架构包
@@ -35,10 +35,10 @@ _MODULE_MAP = {
     'perceived':            'engine.self.perceived',
     'identity':             'engine.self.identity',
     'soul_profile':         'engine.self.soul_profile',
-    'profile':              'engine.self.profile',
-    'user_profile':         'engine.self.user_profile',
     'user_persona':         'engine.self.user_persona',
     'user_facts':           'engine.self.user_facts',
+    'user_insights':        'engine.self.user_insights',
+    'user_profile':         'engine.self.user_profile',
     # emotion/
     'bond':                 'engine.emotion.bond',
     'emotion_contagion':    'engine.emotion.emotion_contagion',
@@ -94,6 +94,7 @@ _MODULE_MAP = {
     # social/
     'prompt_builder':       'engine.social.prompt_builder',
     'sensors':              'engine.social.sensors',
+    'env_source':           'engine.social.env_source',
     'subconscious':         'engine.social.subconscious',
     'laws':                 'engine.social.laws',
     'contradiction_engine': 'engine.social.contradiction_engine',

@@ -1,29 +1,28 @@
-# soul-skill 技能配置（扁平键值，启动器自带解析，无需 PyYAML）
+# soulviai 技能配置（扁平键值，启动器自带解析，无需 PyYAML）
 # 留空表示自动探测。
 
-# 数字生命引擎根目录（含 soul.py / engine/ 的那一层）
+# 数字生命引擎根目录（含 soulviai.py / engine/ 的那一层）
 #
 # 留空（推荐）= 自动使用技能自带的 engine/，即「自包含模式」：
 #   技能自带完整的引擎代码，不依赖任何外部路径，可整体拷贝给别人用。
 #
-# 若你有另一份引擎副本想复用（例如系统里已装好的另一个 soul-skill），
-# 把它的 engine 路径填在这里即可，例如：/opt/soul-skill/engine
+# 若你有另一份引擎副本想复用（例如系统里已装好的另一个 soulviai），
+# 把它的 engine 路径填在这里即可，例如：/opt/soulviai/engine
 project_root: ""
 
-# 运行引擎的解释器。留空则依次尝试：
-#   $SOUL_PYTHON > <project_root>/.venv/bin/python > python3.13/3.12/3.11/3.10 > python3
+# 运行引擎的解释器。留空则自动探测并选版本最高者：
+#   $SOULVIAI_PYTHON > <project_root>/.venv/bin/python > PATH 上 >=3.10 的最高版本
 python: ""
 
-# 用于 soulctl setup 创建虚拟环境的解释器（引擎需 Python >= 3.10）
-# 注意：3.14 下 onnxruntime 1.20 没有轮子，请用 3.11–3.13。
+# 用于 soulviaictl setup 创建虚拟环境的解释器（引擎需 Python >= 3.10）
 #
-# 留空（推荐）= 自动探测：依次尝试 $SOUL_PYTHON > python3.13 > 3.12 > 3.11 > 3.10 > python3
+# 留空（推荐）= 自动探测并选版本最高者（显式指定 $SOULVIAI_PYTHON / 上面的 python 优先）
 # 只有当自动探测不到可用解释器时，才在这里写死一个绝对路径。
 bootstrap_python: ""
 
 # 数据家目录：ta 的记忆（db / json / flaw）与 token、日志都放这里。
 #
-# 留空（推荐）= ~/.soul-skill
+# 留空（推荐）= ~/.soulviai
 # 数据刻意**不放在技能目录里**：技能目录是会被拷贝、压缩、分发的，记忆一旦
 # 在树里，拷给别人或同步网盘就等于把灵魂和渠道凭证一起交出去。
 #
@@ -39,9 +38,9 @@ prefer_daemon: true
 daemon_host: 127.0.0.1
 daemon_port: 8765
 
-# 常驻服务鉴权 token 文件。留空（推荐）= <data_dir>/.soul-daemon.token
+# 常驻服务鉴权 token 文件。留空（推荐）= <data_dir>/.soulviai-daemon.token
 # 首次 serve 自动生成（0600）；重启复用，客户端自动读取，无需人工配置。
-# 也可用环境变量 SOUL_DAEMON_TOKEN 直接给定 token（服务端与客户端都认）。
+# 也可用环境变量 SOULVIAI_DAEMON_TOKEN 直接给定 token（服务端与客户端都认）。
 daemon_token_file: ""
 
 # Web 终端（python3 main.py web）：在浏览器里跑一个 cli 会话。
@@ -50,6 +49,14 @@ daemon_token_file: ""
 # 加 --allow-remote（命令行），不要只改这里。
 web_host: 127.0.0.1
 web_port: 5000
+
+# 消息合并窗口（秒）：终端与 Web 终端里，用户连着发好几条时，等这么久没有新
+# 消息就把它们并成一轮回复，而不是一条一条各回一次。
+# 逐条回复的代价不只是慢：连发 3 条就是 3 次完整回合 —— 3 倍模型调用、3 倍记忆
+# 写入，而且每条都要等十几秒才轮到，第 3 条回复答的其实是第 1 条的事。
+# 调小 = 单条回复更快、但连发更容易被拆开；调大 = 合并得更彻底、单条要多等。
+# 0 = 关闭合并，恢复逐条回复。微信 / QQ 有自己的窗口（3 秒），不受这里影响。
+message_merge_window_seconds: 1.5
 
 # 超时（秒）：对话要等大模型，给足；状态类命令很快
 chat_timeout_seconds: 300

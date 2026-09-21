@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """24小时后台异步终极生命运行机制
 全天候无间断生命运行、实时数值联动、每日夜间复盘、断联宿命延续
@@ -87,6 +87,38 @@ _energy_cost_neutral = 0.01
 _phases = ["活跃", "发呆", "疲惫", "独处", "emo", "自愈"]
 _solo_threshold = 0.15  # 从 config 加载，覆盖硬编码值
 
+# ── 社交疲劳的两道档位线（**唯一来源**）──
+# body.py 的提示词约束、life_gate 的门控、状态文案都从这里取。之前三处各写各的
+# （body 用 0.4/0.6、状态文案用 0.5/0.7、门控用 0.55/0.75），同一份状态在不同
+# 地方被判成了不同的档。可在 config.json 的 life 段覆盖 —— 这是调
+# 「ta 有多容易累」最直接的旋钮。
+SOCIAL_FATIGUE_TIRED = 0.55        # 有点累了
+SOCIAL_FATIGUE_OVERLOAD = 0.75     # 过载
+_SOCIAL_TIRED_DEFAULT = 0.55       # 固定在代码里，避免第二次 load 时把上一次的
+_SOCIAL_OVERLOAD_DEFAULT = 0.75    # 覆盖值当成默认值（越调越偏）
+
+# 休息时段（独处 / 自愈 / 发呆 / 深夜）的恢复倍率。
+# 「睡一觉回满」靠的就是它：0.001/分钟 × 10 = 0.6/小时，一夜足够清空。
+_SOCIAL_REST_MULTIPLIER = 10.0
+_SOCIAL_NIGHT_START = 22           # 深夜区间：含起点、不含终点
+_SOCIAL_NIGHT_END = 7
+_REST_PHASES = ("独处", "自愈", "发呆", "放空")
+
+
+def _is_rest_time(phase: str) -> bool:
+    """现在算不算「休息时段」—— 决定社交疲劳按快档还是慢档恢复。
+
+    独处/自愈/发呆是明确想歇着；深夜则是人该在睡。两者合起来才是
+    「睡一觉回满」的来源，也是把社交疲劳重新拉回低位的主要途径。
+    """
+    if phase in _REST_PHASES:
+        return True
+    try:
+        hour = datetime.now().hour
+    except Exception:
+        return False
+    return hour >= _SOCIAL_NIGHT_START or hour < _SOCIAL_NIGHT_END
+
 
 def load_engine_config():
     """从 config.json 加载生命引擎参数（复活 solo_threshold）"""
@@ -94,8 +126,15 @@ def load_engine_config():
     global _fatigue_positive, _fatigue_negative, _fatigue_neutral
     global _energy_cost_positive, _energy_cost_negative, _energy_cost_neutral, _phases
     global _ferment_release_interval, _solo_threshold
+    global SOCIAL_FATIGUE_TIRED, SOCIAL_FATIGUE_OVERLOAD, _SOCIAL_REST_MULTIPLIER
 
     life_cfg = cfg.get_section("life")
+    SOCIAL_FATIGUE_TIRED = float(life_cfg.get("social_fatigue_tired",
+                                              _SOCIAL_TIRED_DEFAULT))
+    SOCIAL_FATIGUE_OVERLOAD = float(life_cfg.get("social_fatigue_overload",
+                                                 _SOCIAL_OVERLOAD_DEFAULT))
+    _SOCIAL_REST_MULTIPLIER = float(life_cfg.get("social_fatigue_rest_multiplier",
+                                                 _SOCIAL_REST_MULTIPLIER))
     _energy_decay_per_sec = life_cfg.get("energy_decay_per_minute", 0.0003) / 60.0
     _social_recovery_per_sec = life_cfg.get("rest_recovery_per_minute", 0.001) / 60.0
     _night_review_hour = life_cfg.get("night_review_hour", 2)
@@ -216,7 +255,13 @@ def life_tick():
                 _night_review(user_id, now_dt)
 
     except Exception as e:
+        # 必须留痕到 error_log，不能只 print。生命引擎每秒跑一次，而这条 except
+        # 是最后一个漏斗 —— 深夜复盘那个 UnboundLocalError 就是从这里漏出去的，
+        # 最终只表现为一句转瞬即逝的「tick 异常」，没人会发现每天的日级成长全崩了。
+        # log_error 自带同名去重窗口（见 core/logging_utils），所以即使每秒都失败
+        # 也不会把 error_log 刷爆。
         print(f"[生命引擎] tick 异常: {e}")
+        log_error("life.tick", "%s: %s" % (type(e).__name__, e))
 
 
 def ferment_tick():
@@ -412,15 +457,18 @@ def record_life_trace(user_id: str, event_type: str, description: str):
                 try:
                     with open(_LIFE_TRACE_FILE, "r", encoding="utf-8") as f:
                         traces = json.load(f)
-                except Exception:
-                    traces = []
+                except Exception as e:
+                    # 读不出来就不能拿空列表覆盖写回，否则一次读取失败会抹掉
+                    # 全部生活轨迹（下面 unlink 之前就是整个文件重写）。宁可丢这一次。
+                    log_error("life.life.trace_unreadable", str(e), exc_info=True)
+                    return
             traces.append(entry)
             if len(traces) > _LIFE_TRACE_MAX:
                 traces = traces[-_LIFE_TRACE_MAX:]
             with open(_LIFE_TRACE_FILE, "w", encoding="utf-8") as f:
                 json.dump(traces, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as e:
+        log_error("life.life.save_trace", str(e), exc_info=True)
 
 
 def get_life_trace(user_id: str = "", event_type: str = "",
@@ -485,17 +533,31 @@ def _tick_life_vitals(user_id: str, dt: float):
     elif phase == "活跃":
         energy = min(1.0, energy + dt * _social_recovery_per_sec * 0.3)
 
-    # v3: 午间/午后倦怠 — 自然疲劳累积加快
-    social_fatigue += dt * _energy_decay_per_sec * 10 * fatigue_mult
-
     # v3: 收到消息时精力短暂回升
     if _just_interacted.get(user_id, False):
         energy = min(1.0, energy + 0.03)
         _just_interacted[user_id] = False
 
-    # 社交疲劳自然恢复
-    social_recovery = dt * _social_recovery_per_sec
-    social_fatigue = max(0.0, social_fatigue - social_recovery)
+    # ── 社交疲劳自然恢复（休息时段加速）──
+    #
+    # 这里**刻意不再加**「随时间自然累积」那一项（原为
+    # `social_fatigue += dt * _energy_decay_per_sec * 10 * fatigue_mult`）。
+    # 它涨 5.0e-5/秒、而恢复只有 1.67e-5/秒 —— 净增 0.127/小时，全天候、不看
+    # 有没有人说话。结果任何灵魂活跃十几个小时就永久钉在 ~1.0，而 body.py 会在
+    # fatigue > 0.6 时把「你不想跟任何人说太多话」写进**每一轮**提示词，
+    # 用户侧表现就是「社交严重过载」永远挂着、ta 再也热情不起来。
+    #
+    # 语义上那一项也是错的：「社交疲劳」只该由**社交**产生，随时间流逝该涨的是
+    # 精力（energy 已经在做）。真实互动仍会经 record_interaction 累加。
+    rest = _is_rest_time(phase)
+    # 昼夜节律仍参与，但改为作用在恢复上：午后倦怠（fatigue_mult > 1）回得慢，
+    # 晨间清醒（< 1）回得快 —— 累计项删掉后，这份节律感靠这里保留。
+    circadian = 1.0 / max(0.5, fatigue_mult)
+    social_recovery = dt * _social_recovery_per_sec * circadian
+    if rest:
+        social_recovery *= _SOCIAL_REST_MULTIPLIER
+    # 上面钳下限、这里钳上限：原来只钳了下限，于是状态里能看到 1.02 这种数
+    social_fatigue = min(1.0, max(0.0, social_fatigue - social_recovery))
 
     # v3: 事件驱动相位切换（Gap 2）
     event_phase = _get_event_driven_phase(user_id)
@@ -648,7 +710,7 @@ def _night_review(user_id: str, now_dt: datetime):
 
     # 3.5.  记忆合成进化（LLM分析→产生洞察）
     try:
-        from engine import profile as profile_module
+        from engine import user_insights as profile_module
         profile_text = profile_module.get_profile_instruction(user_id)
         memory_module.synthesize_insights(user_id, mind_data, profile_text)
     except Exception:
@@ -705,7 +767,14 @@ def _night_review(user_id: str, now_dt: datetime):
 
     # 3.10. +: 敏感度画像持续演化（根据当天经历微调）
     try:
-        from engine import mind as mind_module
+        # ⚠️ 这里**不要**再写 `from engine import mind as mind_module`。
+        # 函数体里只要有这么一句，Python 就把 mind_module 判定为**本函数的局部变量**，
+        # 于是本函数中它之前的每一次引用（第 680 行的人格微调、第 850 行的群体同步、
+        # 第 902 行的阶段更新）都变成「局部变量尚未赋值」→ UnboundLocalError。
+        # mind_module 在文件顶部已是模块级导入，直接用即可。
+        # 后果曾经很严重：整个深夜复盘从「2. 人格微调补充」起就崩，后面所有日级成长
+        # （自省固化 / 承诺超期 / 创意自评 / 阶段更新 / 夜间反思 / 梦境 / 情绪注入）
+        # 一次都没跑过，而 life_tick 顶层的 except 把它吞成一句「tick 异常」。
         if reflect_result:
             grade = reflect_result.get("overall_grade", "一般")
             insight = reflect_result.get("insight", "")
@@ -1030,8 +1099,10 @@ def _soften_grudges(user_id: str):
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        # 心结弱化改的是记忆权重：静默失败会让「随时间消解」悄悄不生效，
+        # 表现为 Ta 一直记仇 —— 看着像性格问题，其实是这里断了。
+        log_error("life.life.soften_grudges", str(e), exc_info=True)
 
 
 def _solidify_tenderness(user_id: str):
@@ -1047,8 +1118,31 @@ def _solidify_tenderness(user_id: str):
         )
         conn.commit()
         conn.close()
+    except Exception as e:
+        log_error("life.life.solidify_tenderness", str(e), exc_info=True)
+
+
+def _parse_db_time(value):
+    """解析 SQLite 的 datetime('now','localtime') 时间串，失败返回 None。"""
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S")
     except Exception:
-        pass
+        return None
+
+
+def _recover_by_elapsed(fatigue: float, seconds: float, phase: str) -> float:
+    """补上「静置了 seconds 秒」该有的自然恢复（与 tick 同一套公式）。"""
+    if seconds <= 0 or fatigue <= 0:
+        return fatigue
+    try:
+        from engine.life import chronos as chronos_module
+        fatigue_mult = chronos_module.get_circadian_fatigue_generator()
+    except Exception:
+        fatigue_mult = 1.0
+    rate = _social_recovery_per_sec / max(0.5, fatigue_mult)
+    if _is_rest_time(phase):
+        rate *= _SOCIAL_REST_MULTIPLIER
+    return min(1.0, max(0.0, fatigue - seconds * rate))
 
 
 def record_interaction(user_id: str, attitude: str):
@@ -1059,6 +1153,16 @@ def record_interaction(user_id: str, attitude: str):
 
     sf = life.get("social_fatigue", 0.0)
     e = life.get("energy_level", 0.7)
+
+    # 先把「距上次更新静置了多久」的恢复补上。
+    # 自然恢复只在 tick 里发生，而 tick 只在常驻进程（serve / web / 渠道 /
+    # 开着的终端）里跑 —— 只用一次性 `run.sh chat` 的人永远不会 tick，
+    # 疲劳就成了只涨不降的棘轮，等于没修。用 updated_at 把这段补回来：
+    # tick 在跑时 updated_at 只有一秒前的误差（补 0），不跑时正好补上整段静置。
+    _last = _parse_db_time(life.get("updated_at"))
+    if _last:
+        sf = _recover_by_elapsed(sf, (datetime.now() - _last).total_seconds(),
+                                 life.get("current_phase", "活跃"))
 
     # 积极互动消耗能量少，消极互动消耗多
     if attitude in ("温柔", "珍惜"):
@@ -1103,11 +1207,12 @@ def get_life_state_text(user_id: str) -> str:
         "自愈": "在慢慢恢复中，不太主动但可以轻声回应",
     }
 
-    # 社交疲劳提示
+    # 社交疲劳提示（档位线取本模块的 SOCIAL_FATIGUE_*，不要另写数字：
+    # 这里原先写的是 0.7/0.5，和 body.py 的 0.6/0.4、门控的 0.75/0.55 三套并存）
     fatigue_hint = ""
-    if social_fatigue > 0.7:
+    if social_fatigue > SOCIAL_FATIGUE_OVERLOAD:
         fatigue_hint = " | 社交严重过载 —— 见到消息就烦躁，只想躲起来安静待着"
-    elif social_fatigue > 0.5:
+    elif social_fatigue > SOCIAL_FATIGUE_TIRED:
         fatigue_hint = " | 社交有点累了 —— 不太想跟太多人说话"
 
     return (

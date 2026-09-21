@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """
 TaskScheduler — 轻量级后台任务调度器
@@ -126,14 +126,22 @@ class TaskScheduler:
     def register(self, name: str, fn: Callable, interval: float,
                  priority: int = 5, auto_restart: bool = True,
                  max_restarts_per_hour: int = 5,
-                 adaptive: bool = False) -> None:
-        """注册一个周期性任务"""
+                 adaptive: bool = False,
+                 delay_first: bool = False) -> None:
+        """注册一个周期性任务
+
+        delay_first=True 时首次执行要等满一个 interval。默认 False（首次执行发生
+        在注册后的第一个调度周期，约 0.5s）是**刻意的**，life_engine 那批任务依赖
+        它立刻起跑。会联网的任务应该用 True：否则它会在引擎刚构造完就抢跑，
+        和对话入口的首次采集撞车 —— 对方看到采集线程已在跑，那一轮就拿不到环境信息。
+        """
         with self._lock:
             self._tasks[name] = TaskSpec(
                 name=name, fn=fn, interval=interval,
                 priority=priority, auto_restart=auto_restart,
                 max_restarts_per_hour=max_restarts_per_hour,
                 adaptive=adaptive,
+                last_run=time.time() if delay_first else 0.0,
             )
 
     def unregister(self, name: str) -> None:
@@ -243,7 +251,10 @@ class TaskScheduler:
                 if name == "life_engine":
                     effective_interval = task.interval * multiplier
                 elif name in ("reflection", "persona_analysis", "weather_refresh"):
-                    # 后台分析型任务大幅降频
+                    # 后台分析型任务大幅降频（深睡期 10×，即天气最长可陈旧数小时；
+                    # 这是有意的 —— 没人说话时不值得为保鲜频繁联网，一旦有对话，
+                    # on_message_received() 立刻回到 ACTIVE，ChatPipeline 的 ensure()
+                    # 也会当场刷新）。weather_refresh 在 soulviai.py 注册。
                     effective_interval = task.interval * multiplier * power_multiplier
                 else:
                     effective_interval = task.interval * multiplier * max(1.0, power_multiplier * 0.7)

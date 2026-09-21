@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """情绪推理引擎 — Emotional Reasoning Engine
 ==================================================
@@ -430,7 +430,7 @@ def reason_emotion(
 def apply_emotional_reasoning(user_id: str, comprehension: dict, mind: dict,
                                 body_sensation: str = "正常",
                                 memory_context: str = "") -> List[Dict]:
-    """执行情绪推理并生成心智调整指令（供 soul.py 调用）
+    """执行情绪推理并生成心智调整指令（供 soulviai.py 调用）
 
     Returns:
         调整指令列表: [{"dim": str, "delta": float, "immediate": bool, "reason": str}, ...]

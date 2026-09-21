@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """七级人脑主观记忆拟真层（深度重写）
 完整人类记忆BUG：遗忘、失真、错乱嫁接、延迟翻涌、渐进改写、情绪滤镜、主观偏差
@@ -49,7 +49,11 @@ def load_engine_config():
     _distortion_rate = mem_cfg.get("emotional_distortion_rate", 0.15)
 
     # 初始化向量检索引擎
-    if _vector_enabled:
+    # config.json 的 memory.vector_enabled=false 可整体关掉：向量检索只是锦上添花
+    # （语义召回），拿不到模型时会一直走降级路径；而模型下载会白耗带宽、往终端里
+    # 插进度条（HF 那几个 tqdm 默认走 stderr，和对话输出混在一起）。
+    # 机器下不动 BAAI/bge-small-zh-v1.5 的话，建议直接关掉。
+    if _vector_enabled and mem_cfg.get("vector_enabled", True):
         try:
             vector_module.load_engine_config()
             # 启动后异步重建向量索引（确保与 memory 表同步）

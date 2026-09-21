@@ -1,13 +1,25 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 
 import numpy as np
 import sqlite3
 import os
 import threading
+import time
+import warnings
+
+# huggingface_hub 在「有人试图打开进度条、而上面那个环境变量禁用了它们」时会打一条
+# UserWarning。那条警告只是把进度条换成了一行警告，对用户同样是噪音，直接压掉。
+warnings.filterwarnings("ignore", message="Cannot enable progress bars")
 
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+# 模型下载/校验的进度条（"Fetching 5 files" / "Downloading bytes" / "Reconstructing"）
+# 是 huggingface_hub 打的 tqdm，默认走 stderr —— 而终端把 stderr 与 stdout 混在一起，
+# 于是它们会直接插进对话正文，实测出现过：
+#     数字生命: 笑什么笑Downloading bytes:   0%|       |   0.00B / 94.8MB
+# 必须在 import fastembed 之前设好这条才有效。
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 _VECTOR_ENABLED = False
 _MODEL = None
@@ -16,6 +28,15 @@ _DB_PATH = "data/db/embedding.db"
 _lock = threading.Lock()
 _MIN_SIMILARITY = 0.30
 _MODEL_NAME = "BAAI/bge-small-zh-v1.5"
+
+# 模型加载失败后的冷却时间（秒）。
+#
+# 为什么需要：_encode() 在每次存记忆 / 检索记忆时都会被调用，而加载失败时
+# _MODEL 仍然是 None —— 于是**每一次调用都重新走一遍下载**。实测一轮对话能刷出
+# 好几条「BGE 模型加载失败」外加一串进度条，把聊天记录冲得没法看。
+# 失败后进冷却，到点才允许再试（重启进程同样会重试）。
+_MODEL_FAILED_AT = 0.0
+_MODEL_RETRY_AFTER = 600.0
 
 _vector_enabled = _VECTOR_ENABLED
 
@@ -82,9 +103,13 @@ def _init_db():
 
 
 def _load_model():
-    global _MODEL, _VECTOR_ENABLED, _vector_enabled, _DIMENSION
+    global _MODEL, _VECTOR_ENABLED, _vector_enabled, _DIMENSION, _MODEL_FAILED_AT
     if _MODEL is not None:
         return _MODEL
+    # 刚失败过就不要再试（见 _MODEL_FAILED_AT 的说明）：否则每一次存记忆/检索记忆
+    # 都会重新走一遍下载，一轮对话刷出好几条失败与一串进度条。
+    if _MODEL_FAILED_AT and (time.time() - _MODEL_FAILED_AT) < _MODEL_RETRY_AFTER:
+        return None
     try:
         from fastembed import TextEmbedding
         _MODEL = TextEmbedding(
@@ -97,10 +122,15 @@ def _load_model():
             _DIMENSION = 512
         _VECTOR_ENABLED = True
         _vector_enabled = True
+        _MODEL_FAILED_AT = 0.0
         print(f"[向量记忆] BGE 模型加载完成 (dim={_DIMENSION})")
         return _MODEL
     except Exception as e:
+        _MODEL_FAILED_AT = time.time()
         print(f"[向量记忆] BGE 模型加载失败: {e}")
+        print("[向量记忆] 已降级为关键词检索（记忆本身不受影响，只是少了语义召回）；"
+              "%d 分钟内不再重试。要启用需本机能下载 %s"
+              % (int(_MODEL_RETRY_AFTER / 60), _MODEL_NAME))
         _VECTOR_ENABLED = False
         _vector_enabled = False
         return None

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """生命门控引擎 — Life Gate Engine
 =====================================
@@ -56,6 +56,15 @@ GATE_CONFIG = {
 def load_engine_config():
     """从 config.json 加载门控配置"""
     global GATE_CONFIG
+    # 社交疲劳的两道档位线以 life.SOCIAL_FATIGUE_* 为唯一来源，不在这里另写数字。
+    # 懒加载：life 在模块级 import 了 body，本模块若在模块级 import life，
+    # 会在上层导入顺序里成环。
+    try:
+        from engine.life import life as _life_module
+        GATE_CONFIG["fatigue_threshold_rest"] = _life_module.SOCIAL_FATIGUE_TIRED
+        GATE_CONFIG["fatigue_threshold_gate"] = _life_module.SOCIAL_FATIGUE_OVERLOAD
+    except Exception:
+        pass
     try:
         lg_cfg = cfg.get_section("life_gate")
         if lg_cfg:

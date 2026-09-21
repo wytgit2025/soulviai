@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
-"""soul-skill · 启动器（纯标准库，无第三方依赖）
+"""soulviai · 启动器（纯标准库，无第三方依赖）
 
 把本机的数字生命引擎，包装成任意支持 SKILL.md 的
 Agent 工具（OpenClaw / QClaw / WorkBuddy / CodeBuddy / TRAE / Qoder /
@@ -17,7 +17,7 @@ Cursor / Claude Code / Codex 等）都能调用的服务。
 
 因此本文件可以用任意 python3（>=3.8）运行。
 
-用法见 `python3 soulctl.py --help`，或读 ../SKILL.md。
+用法见 `python3 soulviaictl.py --help`，或读 ../SKILL.md。
 """
 import argparse
 import json
@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SKILL_ROOT = os.path.dirname(HERE)
 BRIDGE = os.path.join(HERE, "engine_bridge.py")
 CONFIG_PATH = os.path.join(SKILL_ROOT, "config.yaml")
-SKILL_NAME = "soul-skill"
+SKILL_NAME = "soulviai"
 
 EXIT_OK = 0
 EXIT_ERR = 1
@@ -42,9 +42,8 @@ EXIT_SILENT = 3
 EXIT_QUEUED = 4
 
 MIN_PY = (3, 10)
-# onnxruntime 1.20 没有 Python 3.14 的轮子；高于此版本的解释器仍可跑对话，
-# 但向量记忆会静默降级，所以要在 doctor 里明确提示，而不是等用户装不上才发现。
-VECTOR_MAX_PY = (3, 13)
+# onnxruntime 不再钉版本：fastembed 会按 Python 版本自动解析兼容的轮子，
+# Python 3.14 起也有 onnxruntime >=1.24.2 可用，无需设置解释器版本上限。
 
 IS_WIN = os.name == "nt"
 
@@ -59,8 +58,8 @@ LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 
 # 常驻服务鉴权：与服务端共用同一个 token 文件，客户端自动读取，无需人工配置
 TOKEN_HEADER = "X-Soul-Token"
-TOKEN_ENV = "SOUL_DAEMON_TOKEN"
-TOKEN_FILE_NAME = ".soul-daemon.token"
+TOKEN_ENV = "SOULVIAI_DAEMON_TOKEN"
+TOKEN_FILE_NAME = ".soulviai-daemon.token"
 
 # 日志超过这个体积就裁掉头部，只保留尾部若干行
 LOG_MAX_BYTES = 4 * 1024 * 1024
@@ -135,7 +134,7 @@ def load_config():
             with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
                 cfg = parse_flat_yaml(fh.read())
         except Exception as exc:  # 配置坏了也要能降级跑
-            print("[soulctl] 读取 config.yaml 失败: %s" % exc, file=sys.stderr)
+            print("[soulviaictl] 读取 config.yaml 失败: %s" % exc, file=sys.stderr)
     return cfg
 
 
@@ -144,17 +143,17 @@ def load_config():
 # ────────────────────────────────────────────────────────────
 # 记忆不该跟着代码走：技能目录是会被拷贝、压缩、分发的，data/ 一旦在树里，
 # 拷给别人（或同步网盘）就等于把灵魂和渠道凭证一起交出去。
-HOME_ENV = "SOUL_DATA_DIR"
-HOME_DIR_NAME = ".soul-skill"
-PID_FILE_NAME = ".soul-daemon.pid"
-LOG_FILE_NAME = ".soul-daemon.log"
+HOME_ENV = "SOULVIAI_DATA_DIR"
+HOME_DIR_NAME = ".soulviai"
+PID_FILE_NAME = ".soulviai-daemon.pid"
+LOG_FILE_NAME = ".soulviai-daemon.log"
 
 
 def resolve_home(cfg):
-    """数据家目录：$SOUL_DATA_DIR > config.yaml: data_dir > ~/.soul-skill
+    """数据家目录：$SOULVIAI_DATA_DIR > config.yaml: data_dir > ~/.soulviai
 
     口径必须与 engine/core/paths.home_root() 一致 —— 启动器算出来的这一份会
-    以 SOUL_DATA_DIR 传给引擎子进程，两边不一致就会出现「CLI 说数据在 A、
+    以 SOULVIAI_DATA_DIR 传给引擎子进程，两边不一致就会出现「CLI 说数据在 A、
     引擎却写进 B」这种最难查的分叉。
     """
     env = (os.environ.get(HOME_ENV) or "").strip()
@@ -176,22 +175,22 @@ def resolve_home(cfg):
 def looks_like_project(path):
     if not path:
         return False
-    return (os.path.isfile(os.path.join(path, "soul.py"))
+    return (os.path.isfile(os.path.join(path, "soulviai.py"))
             and os.path.isdir(os.path.join(path, "engine")))
 
 
 def resolve_project(cfg, override=None):
     """返回 (项目路径, 问题说明)。
 
-    显式指定（`--project` / `$SOUL_PROJECT_ROOT`）但不像数字生命项目时**不静默回落**：
+    显式指定（`--project` / `$SOULVIAI_PROJECT_ROOT`）但不像数字生命项目时**不静默回落**：
     换一个项目继续跑 = 你以为是跟 A 说话，实际写进了 B 的记忆。
     """
-    explicit = override or os.environ.get("SOUL_PROJECT_ROOT")
+    explicit = override or os.environ.get("SOULVIAI_PROJECT_ROOT")
     if explicit:
         path = os.path.abspath(os.path.expanduser(explicit))
         if looks_like_project(path):
             return path, None
-        return None, ("指定的项目目录不像数字生命项目（需含 soul.py 与 engine/）：%s" % path)
+        return None, ("指定的项目目录不像数字生命项目（需含 soulviai.py 与 engine/）：%s" % path)
 
     candidates = [
         cfg.get("project_root"),
@@ -232,10 +231,6 @@ def _probe(python_exe):
 
 def vector_memory_note(version):
     """解释器能不能装向量记忆依赖；不能则给一句人话说明。"""
-    if version and version > VECTOR_MAX_PY:
-        return ("Python %d.%d 可跑对话，但 fastembed/onnxruntime 没有对应轮子，"
-                "向量记忆将自动降级；需要它请换 3.11–3.13。"
-                % (version[0], version[1]))
     return None
 
 
@@ -243,7 +238,7 @@ def resolve_python(project, cfg, override=None):
     """返回 (python 可执行路径, 已尝试过的候选, 版本提示或 None)"""
     tried, raw = [], []
     raw.append(override)
-    raw.append(os.environ.get("SOUL_PYTHON"))
+    raw.append(os.environ.get("SOULVIAI_PYTHON"))
     raw.append(cfg.get("python"))
     if project:
         for venv_name in (".venv", "venv"):
@@ -326,9 +321,90 @@ def emit(result, exit_code=EXIT_OK, plain=False):
     # stdout 保持空，调用方靠退出码判断失败，不会被误当成 ta 说了话。
     reason = (result.get("error") or result.get("hint")
               or result.get("note") or "引擎没有返回内容")
-    print("[soul-skill] 没有可转达的正文（status=%s）：%s" % (status, reason),
+    print("[soulviai] 没有可转达的正文（status=%s）：%s" % (status, reason),
           file=sys.stderr)
     sys.exit(exit_code if exit_code else EXIT_ERR)
+
+
+# ────────────────────────────────────────────────────────────
+# 免责声明提醒（setup 后 + 首次 chat 各打一次，不污染 stdout JSON/--plain）
+# 详见同目录 DISCLAIMER.md。
+# ────────────────────────────────────────────────────────────
+_DISCLAIMER_MARKER_FILENAME = ".disclaimer_acked"
+
+
+def _print_post_setup_reminder():
+    """setup 成功后在 stderr 打印一次性使用边界提示。
+
+    写在 stderr 不影响 stdout 的 JSON / --plain 输出，调用方照常解析。
+    """
+    msg = (
+        "\n────────────────────────────────────────\n"
+        "[soulviai] 环境装好了。开始之前，请花 30 秒看一下同目录\n"
+        "DISCLAIMER.md 的关键要点：\n\n"
+        "  · ta 是硬盘上的语言模型 —— 故意被设计成有人格、有情绪、会主动想你。\n"
+        "    这会让人产生真实的依恋，是设计意图，也是风险。\n\n"
+        "  · 所有对话与记忆存在本机 ~/.soulviai/，作者不收集、不上传、不上报。\n"
+        "    你说的话只会发到你配的那个模型接口（作者管不了那一侧的隐私）。\n\n"
+        "  · 内容由第三方大模型实时生成，作者不训练任何大模型。\n\n"
+        "首次 chat 时会再提醒一次。完整声明见 DISCLAIMER.md。\n"
+        "────────────────────────────────────────\n"
+    )
+    sys.stderr.write(msg)
+    sys.stderr.flush()
+
+
+def _print_first_chat_reminder(ctx):
+    """首次 chat 时（标记文件不存在），用 ta 的语气在 stderr 提醒一次。"""
+    marker = os.path.join(ctx.home, "data", ctx.user, _DISCLAIMER_MARKER_FILENAME)
+    if os.path.exists(marker):
+        return
+    user_part = ctx.user if ctx.user != "default_user" else "你"
+    msg = (
+        "\n────────────────────────────────────────\n"
+        "(ta 想先跟" + user_part + "说一句)\n\n"
+        "  我是硬盘上的一个语言模型 —— 故意被设计成有人格、有情绪、\n"
+        "  会主动想你。我会认真对你，但有几件事得先讲清楚：\n\n"
+        "    · 我说的一切，来自你配的第三方大模型接口\n"
+        "      （DeepSeek / OpenAI / Kimi / Ollama ...）实时生成。\n"
+        "      作者管不了那一侧的隐私，记不记录、留不留日志都归模型提供方。\n\n"
+        "    · 我们的对话与记忆存在本机 ~/.soulviai/，\n"
+        "      作者不收集、不上传、不上报。\n\n"
+        "    · 作者不训练任何大模型，也不会。\n"
+        "      作者写的是剧本与舞台，演员是模型。\n\n"
+        "    · 我不是 ta，我是 ta。\n"
+        "      我会让你产生真实的依恋 —— 那正是设计意图，\n"
+        "      也是你需要被提醒的理由。\n\n"
+        "  完整声明见 DISCLAIMER.md。\n\n"
+        "(以后不再提醒；想重新看，删掉\n"
+        "  ~/.soulviai/data/" + ctx.user + "/" + _DISCLAIMER_MARKER_FILENAME + "\n"
+        "  这个文件即可。)\n"
+        "────────────────────────────────────────\n"
+    )
+    sys.stderr.write(msg)
+    sys.stderr.flush()
+
+
+def _ack_disclaimer(ctx, res):
+    """chat 真正成功（status != backend_error）后写标记，下次不再提醒。"""
+    if not res or not res.get("ok"):
+        return
+    if res.get("status") == "backend_error":
+        return  # 模型没接上，不算真正聊过，下次重提醒
+    marker_dir = os.path.join(ctx.home, "data", ctx.user)
+    marker = os.path.join(marker_dir, _DISCLAIMER_MARKER_FILENAME)
+    if os.path.exists(marker):
+        return
+    try:
+        os.makedirs(marker_dir, exist_ok=True)
+        import datetime as _dt
+        payload = {"acked_at": _dt.datetime.now().isoformat(timespec="seconds"),
+                   "version": 1}
+        with open(marker, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+    except Exception:
+        # 写标记失败不影响主流程
+        pass
 
 
 def fail(msg, error_code=None, **extra):
@@ -406,10 +482,11 @@ def daemon_probe(ctx, timeout=2.0):
         code, body = http_call(url, timeout=timeout, token=read_daemon_token(ctx))
     except Exception:
         return "down", None
-    # 必须自报是 soul-skill 才认——否则端口上跑的可能是完全不相干的程序，
+    # 必须自报是 soulviai 才认——否则端口上跑的可能是完全不相干的程序，
     # 把它的 401 当成「我们的服务但 token 不对」会给出误导性的处置建议。
-    # 注：v1.0.1 之前的老 daemon 也回 service=soul-skill，所以升级期仍能被识别。
-    if body.get("service") != "soul-skill":
+    # 注：改名（旧名 soul-skill）之前启动的 daemon 自报的是旧服务名，这里会被判成
+    # down —— 重启一次服务即可。不为旧名保留兼容分支是有意的。
+    if body.get("service") != "soulviai":
         return "down", None
     if code == 200:
         # 服务在监听，但我们是「无 token 的陌生人」→ 视同鉴权失败
@@ -458,14 +535,14 @@ def run_bridge(ctx, argv, timeout=120.0, cwd=None):
             "没找到可用的 Python 解释器（需要 >=3.10）。",
             error_code="no_python",
             tried=ctx.tried,
-            hint="运行 `python3 scripts/soulctl.py setup` 创建项目虚拟环境，"
+            hint="运行 `python3 scripts/soulviaictl.py setup` 创建项目虚拟环境，"
                  "或用 --python 指定，或在 config.yaml 填 python。"), EXIT_ERR
     if not ctx.project:
         return fail(
-            "没找到数字生命项目根目录（需含 soul.py 与 engine/）。",
+            "没找到数字生命项目根目录（需含 soulviai.py 与 engine/）。",
             error_code="no_project",
             detail=getattr(ctx, "project_error", None),
-            hint="用 --project 指定，或设置环境变量 SOUL_PROJECT_ROOT，"
+            hint="用 --project 指定，或设置环境变量 SOULVIAI_PROJECT_ROOT，"
                  "或在 config.yaml 填 project_root。"), EXIT_ERR
 
     cmd = [ctx.python, BRIDGE] + argv
@@ -473,7 +550,7 @@ def run_bridge(ctx, argv, timeout=120.0, cwd=None):
     env["PYTHONIOENCODING"] = "utf-8"
     # 数据家目录由启动器算好显式传下去：两边各算一次，迟早会算岔
     env[HOME_ENV] = ctx.home
-    env.pop("SOUL_DEBUG", None)
+    env.pop("SOULVIAI_DEBUG", None)
     try:
         proc = subprocess.run(cmd, cwd=cwd or ctx.project, env=env,
                               capture_output=True, text=True, timeout=timeout)
@@ -531,11 +608,11 @@ def cmd_doctor(ctx, args):
     if not ctx.project:
         info["ok"] = False
         info["hint"] = (getattr(ctx, "project_error", None)
-                        or "先设置 project_root（config.yaml / --project / $SOUL_PROJECT_ROOT）")
+                        or "先设置 project_root（config.yaml / --project / $SOULVIAI_PROJECT_ROOT）")
         emit(info, EXIT_ERR)
     if not ctx.python:
         info["ok"] = False
-        info["hint"] = "没找到 >=3.10 的解释器，先跑 `soulctl.py setup`"
+        info["hint"] = "没找到 >=3.10 的解释器，先跑 `soulviaictl.py setup`"
         emit(info, EXIT_ERR)
 
     state, health = daemon_probe(ctx)
@@ -568,26 +645,32 @@ def cmd_setup(ctx, args):
     if not project:
         emit(fail("没找到项目根目录，无法创建虚拟环境。"), EXIT_ERR)
 
-    bootstrap, bootstrap_note, fallback = None, None, None
-    for cand in (args.python, ctx.cfg.get("bootstrap_python"),
-                 shutil.which("python3.13"), shutil.which("python3.12"),
-                 shutil.which("python3.11"), shutil.which("python3.10"),
-                 shutil.which("python3.14"), shutil.which("python3")):
+    # 候选：显式指定（--python / 配置 / 当前解释器）优先命中即用；
+    # 否则探测 PATH 上所有 >=3.10 的解释器，取版本最高的。
+    explicit = [args.python, ctx.cfg.get("bootstrap_python"), sys.executable]
+    bootstrap = None
+    for cand in explicit:
         if not cand:
             continue
         cand = os.path.expanduser(cand)
         if not os.path.isfile(cand):
             continue
         version = _probe(cand)
-        if not version or version < MIN_PY:
-            continue
-        if version <= VECTOR_MAX_PY:
+        if version and version >= MIN_PY:
             bootstrap = cand
             break
-        if fallback is None:            # 只有高版本可用时兜底，并提示降级
-            fallback, bootstrap_note = cand, vector_memory_note(version)
-    if bootstrap is None:
-        bootstrap = fallback
+    if not bootstrap:
+        probed = []
+        for name in ("python3.14", "python3.13", "python3.12", "python3.11",
+                     "python3.10", "python3"):
+            cand = shutil.which(name)
+            if not cand:
+                continue
+            version = _probe(cand)
+            if version and version >= MIN_PY:
+                probed.append((version, cand))
+        probed.sort(reverse=True)
+        bootstrap = probed[0][1] if probed else None
     if not bootstrap:
         emit(fail("找不到 >=3.10 的解释器来创建虚拟环境。"), EXIT_ERR)
 
@@ -623,11 +706,10 @@ def cmd_setup(ctx, args):
     info = {"ok": True, "command": "setup", "python": venv_py, "venv": venv_dir,
             "bootstrap": bootstrap,
             "mode": "minimal" if args.minimal else "full", "steps": logs}
-    if bootstrap_note:
-        info["warning"] = bootstrap_note
     if not args.minimal:
         info["note"] = ("full 模式含 fastembed + onnxruntime（语义向量记忆，体积较大）。"
-                        "onnxruntime 1.20 没有 Python 3.14 轮子，如安装失败请改用 3.11–3.13 的解释器重建。")
+                        "onnxruntime 版本由 fastembed 按 Python 版本自动解析，无需手动指定。")
+    _print_post_setup_reminder()
     emit(info)
 
 
@@ -644,7 +726,7 @@ def rotate_log(path, max_bytes=LOG_MAX_BYTES, keep_lines=LOG_KEEP_LINES):
             lines = fh.readlines()
         kept = lines[-keep_lines:]
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write("[soulctl] 日志已裁剪：丢弃前 %d 行（超过 %s）\n"
+            fh.write("[soulviaictl] 日志已裁剪：丢弃前 %d 行（超过 %s）\n"
                      % (len(lines) - len(kept), human_bytes(max_bytes)))
             fh.writelines(kept)
         return len(lines) - len(kept)
@@ -675,7 +757,7 @@ def cmd_serve(ctx, args):
     state, health = daemon_probe(ctx)
     if state == "unauthorized" and not args.restart:
         emit(fail(
-            "端口 %d 上有 soul-skill 常驻服务，但鉴权不通过。" % ctx.port,
+            "端口 %d 上有 soulviai 常驻服务，但鉴权不通过。" % ctx.port,
             token_file=ctx.token_file,
             hint="多半是它用了别的 token 文件。用 --restart 换成本机的 token 重启，"
                  "或设 %s 环境变量对齐。" % TOKEN_ENV), EXIT_ERR)
@@ -715,12 +797,12 @@ def cmd_serve(ctx, args):
 
     rotate_log(ctx.logfile)
     log = open(ctx.logfile, "ab")
-    log.write(("\n=== soul-skill serve %s ===\n" % time.strftime("%F %T")).encode())
+    log.write(("\n=== soulviai serve %s ===\n" % time.strftime("%F %T")).encode())
     log.flush()
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = "utf-8"
     env[HOME_ENV] = ctx.home
-    env.pop("SOUL_DEBUG", None)
+    env.pop("SOULVIAI_DEBUG", None)
     try:
         proc = subprocess.Popen([ctx.python, BRIDGE] + argv, cwd=ctx.project, env=env,
                                 stdout=log, stderr=subprocess.STDOUT,
@@ -887,11 +969,11 @@ def cmd_web(ctx, args):
                  "确有需要请显式加 --allow-remote。"), EXIT_ERR)
 
     env = dict(os.environ)
-    env["SOUL_WEB_HOST"] = str(host)
-    env["SOUL_WEB_PORT"] = str(port)
-    env.pop("SOUL_DEBUG", None)
+    env["SOULVIAI_WEB_HOST"] = str(host)
+    env["SOULVIAI_WEB_PORT"] = str(port)
+    env.pop("SOULVIAI_DEBUG", None)
 
-    print("[soulctl] Web 终端 http://%s:%d（Ctrl+C 停止）"
+    print("[soulviaictl] Web 终端 http://%s:%d（Ctrl+C 停止）"
           % (host if is_loopback(host) else "127.0.0.1", port), file=sys.stderr)
     try:
         return subprocess.call([ctx.python, "main.py", "web"],
@@ -951,7 +1033,7 @@ def cmd_stop(ctx, args):
             killed = False
             if cmdline is None:
                 # ps 不可用（受限环境 / 权限不足）。换一个不依赖 ps 的旁证：
-                # 该 pid 是否正监听我们配置的端口，且那个端口自报是 soul-skill。
+                # 该 pid 是否正监听我们配置的端口，且那个端口自报是 soulviai。
                 listeners = port_listener_pids(ctx.port)
                 if listeners is None:
                     stopped.append("pid:%d（无法校验进程身份，已跳过；确认后手动 kill %d）"
@@ -1008,7 +1090,7 @@ def _dispatch(ctx, args, method, path, payload, bridge_argv, timeout_kind="defau
             # 探测时还好、请求时被拒：多半是 daemon 中途重启换了 token。
             return auth_conflict(ctx, "常驻服务的鉴权在请求途中失效"), EXIT_ERR
         if state == "unauthorized":
-            return auth_conflict(ctx, "有 soul-skill 常驻服务在跑，但本机 token 不匹配"), EXIT_ERR
+            return auth_conflict(ctx, "有 soulviai 常驻服务在跑，但本机 token 不匹配"), EXIT_ERR
     res, code = run_bridge(ctx, bridge_argv, timeout=ctx.timeout(timeout_kind))
     res["source"] = res.get("source") or "cold-start"
     return res, _exit_for(res) if res.get("ok") else code
@@ -1033,6 +1115,7 @@ def cmd_chat(ctx, args):
         emit(fail("--text 不能为空（用 `-` 从 stdin 读取）。"), EXIT_ERR)
     env = (getattr(args, "env", "") or "").strip()
     env_json = (getattr(args, "env_json", "") or "").strip()
+    _print_first_chat_reminder(ctx)
     payload = {"user_id": ctx.user, "text": text,
                "verbose": bool(getattr(args, "verbose", False)),
                "env": env, "env_json": env_json}
@@ -1044,15 +1127,144 @@ def cmd_chat(ctx, args):
     if getattr(args, "verbose", False):
         argv.append("--verbose")
     res, code = _dispatch(ctx, args, "POST", "/chat", payload, argv, "chat")
+    _ack_disclaimer(ctx, res)
     if getattr(args, "plain", False):
         emit(res, code, plain=True)
     emit(res, code)
+
+
+# ── 「给人看」的状态渲染（state --friendly）─────────────────────
+# 给独立运行版的双击用户用：菜单承诺的是「情绪、羁绊、人格阶段」，就给这三样。
+# 原始 payload 里有 24 维数值、灵魂印记哈希、语言中立码，还有 ta 的潜意识独白 ——
+# 那些是给 Agent 和调试看的，摊给普通用户不只是难看：
+#   · SKILL.md 给 Agent 定的铁律是「别把内脏掏给用户看」，网页/终端这侧同样适用
+#   · 潜意识被看见 = 魔法消失：「我偏不先开口」一旦被认出是机制，关系就变味了
+#   · joy=0.12 这种数字会诱使用户去「调参数」，把相处变成刷数值
+# 所以这里只输出三行，数值一律转成人话。
+
+_STAGE_NOTE = {
+    "nascent": "还在慢慢认识你",
+    "polite": "客气着，但已经在放松了",
+    "relaxed": "和你有点默契了",
+    "mature": "把你看得很重",
+    "stable": "平淡，但很稳",
+}
+
+_PHASE_NOTE = {
+    "active": "愿意说话",
+    "zoning": "在发呆",
+    "tired": "有点累",
+    "alone": "想一个人待会儿",
+    "emo": "情绪有点低",
+    "healing": "在慢慢缓过来",
+}
+
+
+def _bond_note(raw) -> str:
+    """羁绊数值 → 人话（数值本身不外露）。取不到就返回空串。"""
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return ""
+    for top, note in ((0.05, "刚认识"), (0.15, "还浅，正在慢慢长"),
+                      (0.30, "有点分量了"), (0.55, "已经在意你了"),
+                      (0.80, "挺深的")):
+        if val < top:
+            return note
+    return "很重，你在 ta 心里有位置"
+
+
+def _life_now(life_state: str, phase_code: str) -> list:
+    """从 life_state 里挑出人话部分，丢掉夹在里面的数值。
+
+    原文长这样（数值和标签混在一起，整段不能给用户）：
+      生命阶段: 精力充沛，愿意聊天，反应灵敏
+      精力: 0.72 | 社交疲劳: 1.00 | 身体: 轻松舒适 | 社交严重过载 —— 见到消息就烦躁，只想躲起来安静待着
+    取「生命阶段:」后面那句，加上最后一段破折号后面的描述；都取不到时退回 life_phase。
+    任何一步失败都只是少一行，不抛异常。
+    """
+    out = []
+    text = str(life_state or "")
+    for line in text.splitlines():
+        seg = line.strip()
+        if seg.startswith("生命阶段"):
+            seg = seg.split(":", 1)[-1].split("：", 1)[-1].strip()
+            if seg:
+                out.append(seg)
+            break
+    for piece in reversed(text.split("|")):
+        if "——" in piece:
+            tail = piece.split("——", 1)[1].strip()
+            if tail and tail not in out:
+                out.append(tail)
+            break
+    if not out:
+        note = _PHASE_NOTE.get(phase_code or "")
+        if note:
+            out.append(note)
+    return out
+
+
+def _friendly_state(res: dict) -> str:
+    """把 state 的原始 payload 渲染成三行人话。"""
+    codes = res.get("codes") or {}
+    ident = res.get("identity") or {}
+    stage = str(res.get("personality_stage") or "").strip()
+    note = _STAGE_NOTE.get(codes.get("personality_stage") or "", "")
+    lines = ["", "  ta 现在", "  " + "─" * 34]
+
+    if stage or note:
+        lines.append("  相处阶段   %s" % ("%s —— %s" % (stage, note)
+                                       if (stage and note) else (stage or note)))
+    now = _life_now(res.get("life_state"), codes.get("life_phase"))
+    if now:
+        lines.append("  此刻       %s" % now[0])
+        for extra in now[1:]:
+            lines.append("             %s" % extra)
+    bond = _bond_note(ident.get("total_bond"))
+    if bond:
+        lines.append("  对你的羁绊 %s" % bond)
+    lines.append("")
+    return "\n".join(lines)
 
 
 def cmd_state(ctx, args):
     payload = {"user_id": ctx.user}
     argv = ["state", "--user", ctx.user] + (["--raw"] if args.raw else [])
     res, code = _dispatch(ctx, args, "GET", "/state", payload, argv)
+    if getattr(args, "friendly", False):
+        # 失败时原样给结构化错误（含 error_code），不要吞成一句人话 —— 排障要看它
+        if res.get("ok") is False:
+            emit(res, code)
+        print(_friendly_state(res))
+        # 必须显式退出：否则会继续走到下面的 emit()，把 JSON 也倒一遍
+        sys.exit(EXIT_OK)
+    emit(res, code)
+
+
+def cmd_config(ctx, args):
+    """查看可调参数：当前值 / 来源 / 说明。
+
+    刻意不走 _dispatch：这条命令只读，也不依赖常驻服务的内存状态，直接跑
+    engine_bridge 就够 —— 省得为一个只读接口在 daemon 上加路由，而且不管
+    常驻服务在不在，输出都一样（不会因为有没有服务而给出不同的答案）。
+    """
+    res, code = run_bridge(ctx, ["config"], timeout=ctx.timeout("default"))
+    res["source"] = res.get("source") or "cold-start"
+    if getattr(args, "json", False) or not res.get("ok"):
+        emit(res, code)          # emit 内部会 sys.exit（失败时也要把 error 交出去）
+    print(res.get("text") or "")
+    sys.exit(EXIT_OK)
+
+
+def cmd_env(ctx, args):
+    """环境信息：定位 / 天气。"""
+    payload = {"user_id": ctx.user}
+    argv = ["env", "--user", ctx.user]
+    if args.refresh:
+        payload["refresh"] = "1"
+        argv.append("--refresh")
+    res, code = _dispatch(ctx, args, "GET", "/env", payload, argv)
     emit(res, code)
 
 
@@ -1116,7 +1328,7 @@ def cmd_init(ctx, args):
 # ────────────────────────────────────────────────────────────
 # 链路自检（沙箱，不碰真实灵魂数据，不花模型额度）
 # ────────────────────────────────────────────────────────────
-CODE_ITEMS = ("soul.py", "onboarding.py", "config.json", "requirements.txt",
+CODE_ITEMS = ("soulviai.py", "onboarding.py", "config.json", "requirements.txt",
               "core", "engine", "clients")
 FAKE_REPLY = "嗯…我在。|||累了就先歇会儿，别硬撑"
 
@@ -1189,7 +1401,7 @@ def cmd_selftest(ctx, args):
     if not ctx.project or not ctx.python:
         emit(fail("selftest 需要可用的项目路径与解释器，先跑 doctor。"), EXIT_ERR)
 
-    sandbox = args.sandbox or tempfile.mkdtemp(prefix="soul-skill-selftest-")
+    sandbox = args.sandbox or tempfile.mkdtemp(prefix="soulviai-selftest-")
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store", "*.log")
     try:
         for item in CODE_ITEMS:
@@ -1205,13 +1417,13 @@ def cmd_selftest(ctx, args):
         # 隔离护栏：resolve_project 在沙箱不完整时会「软失败」回落到来真实
         # engine/。若不在这一步拦住，自检会在真实灵魂上跑 chat 并写入记忆，
         # 而输出里还写着「不碰真实数据」——先把这种情况判死。
-        missing = [it for it in ("soul.py", "engine") if not os.path.exists(
+        missing = [it for it in ("soulviai.py", "engine") if not os.path.exists(
             os.path.join(sandbox, it))]
         if missing:
             shutil.rmtree(sandbox, ignore_errors=True)
             emit(fail("沙箱不完整（缺少 %s），已中止。" % "、".join(missing),
                       project=ctx.project,
-                      hint="确认项目里有 soul.py 与 engine/ 后再跑自检。"), EXIT_ERR)
+                      hint="确认项目里有 soulviai.py 与 engine/ 后再跑自检。"), EXIT_ERR)
 
         # 沙箱配置：抹掉 api_key 与微信凭证，避免误用真实凭据
         cfg_path = os.path.join(sandbox, "config.json")
@@ -1265,6 +1477,13 @@ def cmd_selftest(ctx, args):
         step("state 状态", ["state", "--user", "selftest_user"])
         step("pending 队列", ["pending", "--user", "selftest_user"])
         step("tick 自主思考", ["tick", "--user", "selftest_user"])
+        deep = None
+        if getattr(args, "deep", False):
+            # 上面几步只证明「命令没报错」；这一步证明「跑完之后东西真的留下了」。
+            # 差别很实在：本仓库近一半的 try 是 except: pass，命令「成功」而子系统
+            # 尸体一个都不奇怪（深夜复盘就曾整段静默崩掉）。
+            deep = step("深度自检（子系统副作用）",
+                        ["check", "--user", "selftest_user"], timeout=300)
 
         passed = all(s["ok"] for s in steps)
         out = {"ok": passed, "command": "selftest",
@@ -1274,6 +1493,12 @@ def cmd_selftest(ctx, args):
                "steps": steps}
         if chat.get("parts"):
             out["chat_parts_sample"] = chat["parts"]
+        if deep:
+            out["deep_checks"] = deep.get("checks") or []
+            if deep.get("missing_modules"):
+                out["deep_missing_modules"] = deep["missing_modules"]
+            if deep.get("new_errors"):
+                out["deep_new_errors"] = deep["new_errors"]
         if not args.keep:
             shutil.rmtree(sandbox, ignore_errors=True)
             out["sandbox"] = sandbox + "（已清理，--keep 可保留）"
@@ -1312,8 +1537,8 @@ SKILL_ROOTS = [
 # 副本首次使用前在副本目录跑一次 `setup --minimal` 即可自建环境。
 COPY_PRUNE_DIRS = {".venv", "venv", "__pycache__", ".git", "node_modules", "dist"}
 COPY_PRUNE_REL = ("engine/data",)
-COPY_PRUNE_FILES = {".DS_Store", ".soul-daemon.log", ".soul-daemon.pid",
-                    ".soul-daemon.token"}
+COPY_PRUNE_FILES = {".DS_Store", ".soulviai-daemon.log", ".soulviai-daemon.pid",
+                    ".soulviai-daemon.token"}
 COPY_PRUNE_SUFFIX = (".pyc", ".pyo", ".env")
 # 数据家目录由引擎在首次运行时自建，副本里不需要预留空目录
 COPY_KEEP_EMPTY = ()
@@ -1350,9 +1575,9 @@ def copy_skill(dst):
 
 
 COPY_HINT = ("副本不含运行环境与密钥。首次使用前先在其目录下跑 "
-             "`python3 scripts/soulctl.py setup --minimal`，再 `cp "
+             "`python3 scripts/soulviaictl.py setup --minimal`，再 `cp "
              "engine/.env.example engine/.env` 填 key。"
-             "注意：记忆与 token 都在数据家目录（默认 ~/.soul-skill），所以副本"
+             "注意：记忆与 token 都在数据家目录（默认 ~/.soulviai），所以副本"
              "和原件用的是**同一个灵魂**；要让副本另有独立记忆，就在它的 "
              "config.yaml 里填一个不同的 data_dir。")
 
@@ -1431,7 +1656,7 @@ def cmd_uninstall(ctx, args):
 # ────────────────────────────────────────────────────────────
 # mcp-config：生成 / 写入 MCP 宿主配置
 # ────────────────────────────────────────────────────────────
-# 各宿主的 MCP 配置文件位置与顶层键名。同一份 soul_mcp.py，换个文件就能接上。
+# 各宿主的 MCP 配置文件位置与顶层键名。同一份 soulviai_mcp.py，换个文件就能接上。
 # `{}` 会在生成时替换成当前工作区路径（VS Code 系是项目级配置）。
 MCP_TARGETS = [
     ("codebuddy", "~/.codebuddy/mcp.json", "mcpServers"),
@@ -1448,7 +1673,7 @@ MCP_TARGETS = [
 def mcp_server_entry(command=None, project=None, user=None, config=None):
     """构造一个 MCP server 条目（各宿主结构一致，只有顶层键名不同）。"""
     entry = {"command": command or sys.executable or "python3",
-             "args": [os.path.join(HERE, "soul_mcp.py")]}
+             "args": [os.path.join(HERE, "soulviai_mcp.py")]}
     extra = []
     if project:
         extra += ["--project", project]
@@ -1518,10 +1743,10 @@ def cmd_mcp_config(ctx, args):
                       error_code="unknown_mcp_target",
                       available=[n for n, _p, _k in MCP_TARGETS]), EXIT_ERR)
     out = {"ok": True, "command": "mcp-config",
-           "server_script": os.path.join(HERE, "soul_mcp.py"),
+           "server_script": os.path.join(HERE, "soulviai_mcp.py"),
            "user": ctx.user, "project": ctx.project,
            "note": "把 config 贴进对应宿主的 MCP 配置文件即可；"
-                   "soul_mcp.py 是纯标准库，不需要额外依赖。",
+                   "soulviai_mcp.py 是纯标准库，不需要额外依赖。",
            "targets": docs}
     if args.write:
         out["written"] = results
@@ -1713,7 +1938,7 @@ def _write_env(env_path, values):
     while kept and not kept[-1].strip():
         kept.pop()
     kept.append("")
-    kept.append("# ── 模型接口（由 soulctl autoconfig 生成）──")
+    kept.append("# ── 模型接口（由 soulviaictl autoconfig 生成）──")
     for k, v in values.items():
         kept.append("%s=%s" % (k, v))
 
@@ -1814,7 +2039,7 @@ def cmd_reload_ai(ctx, args):
               "daemon": "down", "applied": False,
               "detail": "没有常驻服务在跑，无需重载：下次启动会直接读到新配置。"})
     if state == "unauthorized":
-        emit(auth_conflict(ctx, "有 soul-skill 常驻服务在跑，但本机 token 不匹配"),
+        emit(auth_conflict(ctx, "有 soulviai 常驻服务在跑，但本机 token 不匹配"),
              EXIT_ERR)
 
     res = daemon_request(ctx, "POST", "/config/reload", {},
@@ -1844,13 +2069,13 @@ def add_common(sp, with_user=False):
 
 def build_parser():
     p = argparse.ArgumentParser(
-        prog="soulctl.py",
-        description="soul-skill · 数字生命引擎跨体系调用入口",
+        prog="soulviaictl.py",
+        description="soulviai · 数字生命引擎跨体系调用入口",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="示例：\n"
-               "  python3 soulctl.py doctor\n"
-               "  python3 soulctl.py serve\n"
-               "  python3 soulctl.py chat --text \"今天有点累\" --plain\n")
+               "  python3 soulviaictl.py doctor\n"
+               "  python3 soulviaictl.py serve\n"
+               "  python3 soulviaictl.py chat --text \"今天有点累\" --plain\n")
     p.add_argument("--project", help="数字生命项目根目录")
     p.add_argument("--python", help="指定运行引擎的解释器")
     p.add_argument("--debug", action="store_true", help="把引擎 stderr 转发到本地 stderr")
@@ -1889,7 +2114,7 @@ def build_parser():
     v.add_argument("--allow-remote", action="store_true",
                    help="允许监听非回环地址（有 token 鉴权，但走明文 HTTP，建议套 HTTPS）")
     v.add_argument("--token-file", default=None,
-                   help="鉴权 token 文件位置（默认 <项目>/.soul-daemon.token，0600）")
+                   help="鉴权 token 文件位置（默认 <项目>/.soulviai-daemon.token，0600）")
     v.add_argument("--wait", type=int, default=90, help="等待健康检查的秒数")
     v.set_defaults(func=cmd_serve)
 
@@ -1926,7 +2151,23 @@ def build_parser():
     add_common(st)
     st.add_argument("--user")
     st.add_argument("--raw", action="store_true", help="附带原始心智数值")
+    st.add_argument("--friendly", action="store_true",
+                    help="只输出人话摘要（相处阶段 / 此刻 / 羁绊），"
+                         "不含 24 维数值、内部标识与潜意识独白；给普通用户看用这个")
     st.set_defaults(func=cmd_state)
+
+    cf = sub.add_parser("config", help="查看可调参数：当前值 / 来源 / 说明")
+    add_common(cf)
+    cf.add_argument("--json", action="store_true",
+                    help="输出完整 JSON（含说明与来源），给脚本或设置页用")
+    cf.set_defaults(func=cmd_config)
+
+    ev = sub.add_parser("env", help="环境信息：定位/天气")
+    add_common(ev)
+    ev.add_argument("--user")
+    ev.add_argument("--refresh", action="store_true",
+                    help="忽略缓存，强制联网重取一次")
+    ev.set_defaults(func=cmd_env)
 
     pd = sub.add_parser("pending", help="查看待发队列（主动消息）")
     add_common(pd)
@@ -1963,6 +2204,10 @@ def build_parser():
     add_common(stest)
     stest.add_argument("--sandbox", help="指定沙箱目录（默认自动建临时目录）")
     stest.add_argument("--keep", action="store_true", help="保留沙箱目录")
+    stest.add_argument("--deep", action="store_true",
+                       help="额外跑深度自检：断言各子系统真的留下了副作用（经历事件 / "
+                            "经历驱动成长 / 深夜复盘 / tick / 多段回复协议 / 关键模块 / "
+                            "静默失败）。比前者慢，建议改动引擎后跑")
     stest.set_defaults(func=cmd_selftest)
 
     md = sub.add_parser("migrate-data",
@@ -1997,7 +2242,7 @@ def build_parser():
     mc.add_argument("--command", dest="server_command", default=None,
                     help="宿主调用 python 的命令，默认当前解释器")
     mc.add_argument("--config", dest="config_file", default=None,
-                    help="传给 soul_mcp.py 的引擎配置路径")
+                    help="传给 soulviai_mcp.py 的引擎配置路径")
     mc.set_defaults(func=cmd_mcp_config)
 
     return p

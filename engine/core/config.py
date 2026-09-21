@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """共享配置加载器
 统一从 config.json 读取，供各模块使用
@@ -234,3 +234,101 @@ def get_section(section: str) -> dict:
     if section == "":
         return _data
     return _data.get(section, {})
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 可调参数清单
+# ══════════════════════════════════════════════════════════════════════
+# 供 `soulviaictl config` 打印（`--json` 给机器读，将来设置页复用同一份）。
+# **说明文字的唯一来源** —— 别在 CLI 或网页里另写一份，否则迟早对不上。
+#
+# 只列「用户 / 运维值得动」的键。引擎内部的算法参数（投影学习、元认知、
+# 反事实推理那一批）刻意不在内：它们互相耦合，单拉一个出来调只会调坏，
+# 而这些恰恰不该给用户碰（见 SKILL.md 的「别把内脏掏给用户看」）。
+#
+# 每一项：
+#   default  默认值（与各模块 load_engine_config 里的默认保持一致，改那边要同步这里）
+#   desc     一句话说明
+#   secret   True 时只显示「已设置」，绝不打印值
+#   env      对应环境变量名（.env 或真实环境变量会覆盖 config.json）
+# 段名 "" 表示顶层键。
+TUNABLES = {
+    "": {
+        "_title": "基本",
+        "lang": {"default": "zh", "env": ("AI_LANG",),
+                 "desc": "ta 说话的语言（zh/zh_tw/en/ja/ko/th/es/fr/pt/de/ru/ar/hi）"},
+        "user_mbti_type": {"default": "",
+                           "desc": "首次问答推断出的用户人格类型"},
+    },
+    "ai": {
+        "_title": "模型接口（唯一必填项）",
+        # env 一律引用本文件里已有的别名常量（含 DEEPSEEK_* 旧名）——
+        # 另抄一份早晚会漏，而漏掉的表现就是「明明配了却显示未设置」。
+        "provider": {"default": "", "env": _AI_PROVIDER_ENVS,
+                     "desc": "厂商预设名，会自动补全地址与模型名（deepseek/openai/…/ollama）"},
+        "model": {"default": "", "env": _AI_MODEL_ENVS + _LEGACY_MODEL_ENVS,
+                  "desc": "模型名；不填 provider 时必须写"},
+        "api_base": {"default": "", "env": _AI_BASE_ENVS + _LEGACY_BASE_ENVS,
+                     "desc": "OpenAI 兼容地址，如 https://your-endpoint/v1"},
+        "api_key": {"default": "", "secret": True,
+                    "env": _AI_KEY_ENVS + _LEGACY_KEY_ENVS,
+                    "desc": "接口密钥（值本身不显示）"},
+        "temperature": {"default": 0.85, "desc": "采样温度"},
+        "max_tokens": {"default": 1024, "desc": "单次回复的最大 token"},
+        "background_model": {"default": "", "env": _AI_BG_MODEL_ENVS,
+                             "desc": "后台任务（反思 / 取名等）用的模型，留空用主模型"},
+    },
+    "env_auto": {
+        "_title": "环境感知（定位 / 天气，全部免 Key）",
+        "enabled": {"default": True, "desc": "总开关"},
+        "location": {"default": True, "desc": "IP → 城市"},
+        "weather": {"default": True, "desc": "天气（需要上面的定位或手填城市）"},
+        "city": {"default": "", "desc": "手填城市；填了就不暴露 IP"},
+        "ttl_minutes": {"default": 30, "desc": "缓存有效期"},
+        "timeout_seconds": {"default": 4, "desc": "单个请求超时"},
+        "cold_start_wait_seconds": {"default": 1.5,
+                                    "desc": "冷启动最多阻塞多久，必须小于 timeout_seconds"},
+    },
+    "life": {
+        "_title": "生命体征（前三个是「ta 有多容易累」的旋钮）",
+        "social_fatigue_tired": {"default": 0.55, "desc": "社交疲劳第一档：有点累了"},
+        "social_fatigue_overload": {"default": 0.75, "desc": "第二档：过载。调高 = 更耐聊"},
+        "social_fatigue_rest_multiplier": {"default": 10,
+                                           "desc": "休息时段（独处/自愈/发呆/深夜）的恢复倍率"},
+        "social_fatigue_per_interaction": {"default": 0.02,
+                                           "desc": "每条消息的疲劳成本（温柔 0.5×、中性 1×、冷淡 2×）"},
+        "energy_decay_per_minute": {"default": 0.0003, "desc": "精力自然衰减速率"},
+        "rest_recovery_per_minute": {"default": 0.001, "desc": "精力恢复速率"},
+        "solo_threshold": {"default": 0.15, "desc": "精力低于此值进入「独处」"},
+        "night_review_hour": {"default": 2, "desc": "深夜回顾的时点（小时）"},
+    },
+    "life_gate": {
+        "_title": "生命门控（ta 有多容易「不想聊」）",
+        "rejection_probability": {"default": {"独处": 0.22, "疲惫": 0.10, "emo": 0.05},
+                                  "desc": "各相位下拒绝回应的概率"},
+        "fatigue_threshold_rest": {"default": 0.55,
+                                   "desc": "疲劳到此值降级为「休息」（默认取 life.social_fatigue_tired）"},
+        "fatigue_threshold_gate": {"default": 0.75,
+                                   "desc": "疲劳到此值降级为「门控」（默认取 life.social_fatigue_overload）"},
+        "night_restrict_hours": {"default": [22, 6], "desc": "深夜时段，[起, 止]"},
+        "night_low_probability": {"default": 0.15, "desc": "深夜额外降一级的概率"},
+    },
+    "memory": {
+        "_title": "记忆",
+        "emotional_distortion_rate": {"default": 0.15, "desc": "回忆时情绪被扭曲的概率"},
+    },
+    "wx_bot": {
+        "_title": "微信（扫码登录即可，一般不用手填）",
+        "bot_token": {"default": "", "secret": True, "env": ("WX_BOT_TOKEN",),
+                      "desc": "扫码成功后自动写入 data/wx_creds.json"},
+        "ilink_bot_id": {"default": "", "env": ("WX_ILINK_BOT_ID",), "desc": "同上"},
+        "ilink_user_id": {"default": "", "env": ("WX_ILINK_USER_ID",), "desc": "同上"},
+    },
+    "qq_bot": {
+        "_title": "QQ（必须先填才能启动）",
+        "app_id": {"default": "", "env": ("QQ_APP_ID",),
+                   "desc": "QQ 开放平台的 AppID（https://q.qq.com）"},
+        "client_secret": {"default": "", "secret": True, "env": ("QQ_CLIENT_SECRET",),
+                          "desc": "AppSecret（值本身不显示）"},
+    },
+}

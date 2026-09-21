@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """群体共享池 — Collective Pool
 =================================
@@ -22,7 +22,7 @@ from collections import defaultdict
 # ── 存储 ──
 _pool: Dict[str, dict] = {}
 _pool_lock = threading.Lock()
-# 相对 cwd：core.paths.chdir_home() 会把工作目录切到数据家目录（~/.soul-skill）。
+# 相对 cwd：core.paths.chdir_home() 会把工作目录切到数据家目录（~/.soulviai）。
 # 仍用 `os.path.dirname(__file__)` 拼路径会绕过数据家，把记忆写回代码树里。
 _POOL_FILE = os.path.join("data", "json", "collective_pool.json")
 

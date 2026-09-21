@@ -2,22 +2,28 @@
 engine/.env
 *.env
 # 常驻服务鉴权 token（谁拿到谁能读 ta 的全部记忆）
+.soulviai-daemon.token
+*.soulviai-daemon.token
+# 旧名兜底：上一版 daemon 留下的同类文件还在磁盘上，漏掉它等于把密钥暴露出去
 .soul-daemon.token
 *.soul-daemon.token
 
 # ── 运行环境与数据（体积大 / 属运行产物）──
 engine/.venv/
 engine/venv/
-# 记忆默认在数据家目录（~/.soul-skill），这里的规则只是防御：万一有旧版遗留的
+# 记忆默认在数据家目录（~/.soulviai），这里的规则只是防御：万一有旧版遗留的
 # engine/data（未迁移），也绝不能被提交或分发出去。
 engine/data/
 
 # ── 运行产物 ──
+.soulviai-daemon.log
+.soulviai-daemon.pid
+# 旧名兜底（同上：上一版 daemon 仍在跑，日志与 pid 就躺在 engine/ 里）
 .soul-daemon.log
 .soul-daemon.pid
 __pycache__/
 *.pyc
 .DS_Store
 
-# ── 打包输出 ──
+# ── 手工组装的交付包输出（可选）──
 dist/

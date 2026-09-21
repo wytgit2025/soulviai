@@ -1,5 +1,5 @@
 #!/bin/sh
-# soul-skill · 独立运行版启动壳（不需要任何 Agent 工具）
+# soulviai · 独立运行版启动壳（不需要任何 Agent 工具）
 #
 #   ./run.sh                       进入终端对话（引擎自带交互式 CLI）
 #   ./run.sh web                   在浏览器里对话
@@ -12,7 +12,7 @@
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-CTL="$HERE/scripts/soulctl.py"
+CTL="$HERE/scripts/soulviaictl.py"
 
 PY=""
 for cand in python3 python; do
@@ -34,7 +34,9 @@ esac
 
 if [ ! -x "$VENV_PY" ]; then
     echo "[soul] 首次运行：正在准备环境（只装对话必需依赖，约 42MB）..." >&2
-    if ! "$PY" "$CTL" setup --minimal >/dev/null; then
+    # 不静音：这是一次性、可能几分钟的下载，静音会让「正在装」和「卡死了」变得
+    # 无法区分 —— 双击启动的用户会直接关窗口走人。
+    if ! "$PY" "$CTL" setup --minimal; then
         echo "[soul] 环境准备失败。手动重试：$PY \"$CTL\" setup" >&2
         exit 1
     fi

@@ -1,5 +1,5 @@
-# Copyright (c) 2026 soul-skill 项目作者
-# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 soulviai 项目作者
+# SPDX-License-Identifier: Apache-2.0
 
 """常驻服务联动：让各入口复用同一个引擎，避免多写者。
 
@@ -22,16 +22,16 @@
         text = engine.chat("default_user", "在吗")      # 回退本地引擎
 
 `get_backend()` 的顺序：
-  1. 端口上已有 soul-skill 常驻服务 → 直接连上（复用，不新建写者）
+  1. 端口上已有 soulviai 常驻服务 → 直接连上（复用，不新建写者）
   2. 没有 → 就地拉起一个（后台常驻），再连上
   3. 拉不起来（无权限 / 端口被别的程序占用 / bridge 不存在）→ 返回 None，
      调用方回退本地引擎（行为与从前一致）
 
-设 `SOUL_NO_DAEMON=1` 可强制走本地引擎，不走联动。
+设 `SOULVIAI_NO_DAEMON=1` 可强制走本地引擎，不走联动。
 
-配置与 scripts/soulctl.py 保持同一套（同一份 config.yaml、同一个 token 文件）：
+配置与 scripts/soulviaictl.py 保持同一套（同一份 config.yaml、同一个 token 文件）：
     daemon_host / daemon_port / daemon_token_file
-    $SOUL_DAEMON_TOKEN / $SOUL_DAEMON_TOKEN_FILE 优先级更高
+    $SOULVIAI_DAEMON_TOKEN / $SOULVIAI_DAEMON_TOKEN_FILE 优先级更高
 """
 import json
 import os
@@ -55,11 +55,11 @@ from core.paths import (                                    # noqa: E402
 )
 
 TOKEN_HEADER = "X-Soul-Token"
-TOKEN_ENV = "SOUL_DAEMON_TOKEN"
-TOKEN_ENV_FILE = "SOUL_DAEMON_TOKEN_FILE"
-NO_DAEMON_ENV = "SOUL_NO_DAEMON"
+TOKEN_ENV = "SOULVIAI_DAEMON_TOKEN"
+TOKEN_ENV_FILE = "SOULVIAI_DAEMON_TOKEN_FILE"
+NO_DAEMON_ENV = "SOULVIAI_NO_DAEMON"
 
-SERVICE_NAME = "soul-skill"
+SERVICE_NAME = "soulviai"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 
@@ -75,9 +75,9 @@ _CHAT_TIMEOUT = 300.0           # 对话要等大模型，给足
 _read_cfg = read_config
 
 # 运行期状态（token / 日志 / pid）都落在数据家目录，不进代码树
-TOKEN_FILE_NAME = ".soul-daemon.token"
-LOG_FILE_NAME = ".soul-daemon.log"
-PID_FILE_NAME = ".soul-daemon.pid"
+TOKEN_FILE_NAME = ".soulviai-daemon.token"
+LOG_FILE_NAME = ".soulviai-daemon.log"
+PID_FILE_NAME = ".soulviai-daemon.pid"
 
 
 def settings():
@@ -111,7 +111,7 @@ def read_token(token_file=None):
 def _probe(host, port, token, timeout=2.0):
     """返回 (状态, 载荷)：`up` / `unauthorized` / `down`。
 
-    只有自报 `service == soul-skill` 才认 —— 否则端口上跑的可能是
+    只有自报 `service == soulviai` 才认 —— 否则端口上跑的可能是
     完全不相干的程序，把它当成「我们的服务」会给出误导性的处置建议。
     """
     req = urllib.request.Request("http://%s:%d/health" % (host, port), method="GET")
@@ -194,9 +194,17 @@ class Backend(object):
             return ""
         if status == "queued":
             return "__QUEUED__"
+        # 拼回时用「|||」而不是换行。本方法刻意与 SoulEngine.chat() 同语义
+        # （见类注释），而后者返回的是**原始回复** —— 分段协议「|||」原样保留，
+        # 下游（CLI 的 _respond、渠道的 send_multi_part_reply）就是靠它把一条回复
+        # 拆成「真人连发几条」的。
+        # 常驻服务其实两个都给了：parts（保协议）与 text（就是 parts 用换行拼起来
+        # 的，协议已经没了）。原先取了 parts 又自己 join 一遍，等于特意挑了个把
+        # 协议毁掉的版本 —— 后果是走常驻服务（prefer_daemon 默认开）时「连续回复」
+        # 全部退化成一条带换行的长消息：终端里打不出第二个「数字生命:」。
         parts = res.get("parts")
         if parts:
-            return "\n".join(parts)
+            return "|||".join(parts)
         return res.get("text") or ""
 
     # ── 其它查询 ──
@@ -265,7 +273,7 @@ class Backend(object):
 # 拉起
 # ────────────────────────────────────────────────────────────
 def _spawn_kwargs():
-    """与 soulctl 一致的「脱离父进程」参数（Windows 上避免弹黑框）。"""
+    """与 soulviaictl 一致的「脱离父进程」参数（Windows 上避免弹黑框）。"""
     if os.name != "nt":
         return {"start_new_session": True}
     flags = 0
@@ -333,9 +341,9 @@ def get_backend(auto_spawn=True):
     if state == "up":
         return Backend(host, port, token)
     if state == "unauthorized":
-        # 端口上有 soul-skill，但 token 对不上：多半是另一份副本在跑。
+        # 端口上有 soulviai，但 token 对不上：多半是另一份副本在跑。
         # 这里**不能**回退本地 —— 否则会开出第二个写者撞库。
-        print("[联动] 端口 %d 上已有 soul-skill 常驻服务，但本机 token 不匹配。" % port)
+        print("[联动] 端口 %d 上已有 soulviai 常驻服务，但本机 token 不匹配。" % port)
         print("[联动] 可能是另一份副本在跑；先停掉它，或对齐 %s 环境变量。" % TOKEN_ENV)
         return None
     if not auto_spawn:

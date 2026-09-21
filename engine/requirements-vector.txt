@@ -1,15 +1,15 @@
-# soul-skill · 可选依赖：语义向量记忆（约 200MB 依赖 + 100MB 模型）
+# soulviai · 可选依赖：语义向量记忆（约 200MB 依赖 + 100MB 模型）
 #
 # 装不装？
 #   不分发、刚部署、记忆还少  → 不要装（保持 minimal）
 #   自己长期用、记忆已积累数百条 → 值得装
 #
 # 安装方式：
-#   python3 scripts/soulctl.py setup                # 完整模式（自动连本文件一起装）
+#   python3 scripts/soulviaictl.py setup                # 完整模式（自动连本文件一起装）
 #   # 或手动：pip install -r requirements-vector.txt
 #
-# ⚠️ onnxruntime 1.20 没有 Python 3.14 轮子，请用 3.11–3.13。
+# ⚠️ onnxruntime 版本不在这里钉死：由 fastembed 按 Python 版本自动解析
+#   （Python 3.14 → onnxruntime >=1.24.2；3.10–3.13 → 各自兼容版）。
 
 fastembed>=0.3.5
-onnxruntime==1.20.0
 numpy>=1.24.0
